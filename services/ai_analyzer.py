@@ -39,7 +39,7 @@ class AIAnalyzer:
         
         logger.debug(f"初始化AIAnalyzer: API_URL={self.API_URL}, API_MODEL={self.API_MODEL}, API_KEY={'已提供' if self.API_KEY else '未提供'}, API_TIMEOUT={self.API_TIMEOUT}")
     
-    async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False) -> AsyncGenerator[str, None]:
+    async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
         对股票数据进行AI分析
         
@@ -48,6 +48,7 @@ class AIAnalyzer:
             stock_code: 股票代码
             market_type: 市场类型，默认为'A'股
             stream: 是否使用流式响应
+            analysis_days: AI分析使用的天数，默认30天
             
         Returns:
             异步生成器，生成分析结果字符串
@@ -76,8 +77,8 @@ class AIAnalyzer:
             volume_status = 'HIGH' if volume_ratio > 1.5 else ('LOW' if volume_ratio < 0.5 else 'NORMAL')
             
             # AI 分析内容
-            # 最近14天的股票数据记录
-            recent_df = df.tail(14).copy()
+            # 获取指定天数的股票数据记录
+            recent_df = df.tail(analysis_days).copy()
             recent_df.reset_index(inplace=True)
             recent_df.rename(columns={'index': 'date'}, inplace=True)
             # 确保日期列是字符串格式
@@ -102,7 +103,7 @@ class AIAnalyzer:
                 技术指标概要：
                 {technical_summary}
                 
-                近14日交易数据：
+                近{analysis_days}日交易数据：
                 {recent_data}
                 
                 请提供：
@@ -122,7 +123,7 @@ class AIAnalyzer:
                 技术指标概要：
                 {technical_summary}
                 
-                近14日交易数据：
+                近{analysis_days}日交易数据：
                 {recent_data}
                 
                 请提供：
@@ -142,7 +143,7 @@ class AIAnalyzer:
                 技术指标概要：
                 {technical_summary}
                 
-                近14日交易数据：
+                近{analysis_days}日交易数据：
                 {recent_data}
                 
                 请提供：
@@ -162,7 +163,7 @@ class AIAnalyzer:
                 技术指标概要：
                 {technical_summary}
                 
-                近14日交易数据：
+                近{analysis_days}日交易数据：
                 {recent_data}
                 
                 请提供：

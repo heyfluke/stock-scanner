@@ -50,6 +50,13 @@
                   />
                 </n-form-item>
                 
+                <n-form-item label="分析天数">
+                  <n-select
+                    v-model:value="analysisDays"
+                    :options="analysisDaysOptions"
+                  />
+                </n-form-item>
+                
                 <div class="action-buttons">
                   <n-button
                     type="primary"
@@ -244,6 +251,7 @@ const showAnnouncementBanner = ref(true);
 // 股票分析配置
 const marketType = ref('A');
 const stockCodes = ref('');
+const analysisDays = ref(30); // 默认30天
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 const displayMode = ref<'card' | 'table'>('card');
@@ -287,6 +295,15 @@ const marketOptions = [
   { label: '美股', value: 'US', showSearch: true },
   { label: 'ETF', value: 'ETF', showSearch: true  },
   { label: 'LOF', value: 'LOF', showSearch: true  }
+];
+
+// 分析天数选项
+const analysisDaysOptions = [
+  { label: '7天', value: 7 },
+  { label: '14天', value: 14 },
+  { label: '30天（推荐）', value: 30 },
+  { label: '60天', value: 60 },
+  { label: '90天', value: 90 }
 ];
 
 // 表格列定义
@@ -650,7 +667,8 @@ async function analyzeStocks() {
     // 构建请求参数
     const requestData = {
       stock_codes: uniqueCodes,
-      market_type: marketType.value
+      market_type: marketType.value,
+      analysis_days: analysisDays.value
     } as any;
     
     // 添加自定义API配置

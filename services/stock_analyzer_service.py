@@ -39,7 +39,7 @@ class StockAnalyzerService:
         
         logger.info("初始化StockAnalyzerService完成")
     
-    async def analyze_stock(self, stock_code: str, market_type: str = 'A', stream: bool = False) -> AsyncGenerator[str, None]:
+    async def analyze_stock(self, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
         分析单只股票
         
@@ -47,6 +47,7 @@ class StockAnalyzerService:
             stock_code: 股票代码
             market_type: 市场类型，默认为'A'股
             stream: 是否使用流式响应
+            analysis_days: AI分析使用的天数，默认30天
             
         Returns:
             异步生成器，生成分析结果的JSON字符串
@@ -164,7 +165,7 @@ class StockAnalyzerService:
             yield json.dumps(basic_result, ensure_ascii=False)
             
             # 使用AI进行深入分析
-            async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df_with_indicators, stock_code, market_type, stream):
+            async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df_with_indicators, stock_code, market_type, stream, analysis_days):
                 yield analysis_chunk
                 
             logger.info(f"完成股票分析: {stock_code}")
@@ -175,7 +176,7 @@ class StockAnalyzerService:
             logger.exception(e)
             yield json.dumps({"error": error_msg, "stock_code": stock_code}, ensure_ascii=False)
     
-    async def scan_stocks(self, stock_codes: List[str], market_type: str = 'A', min_score: int = 0, stream: bool = False) -> AsyncGenerator[str, None]:
+    async def scan_stocks(self, stock_codes: List[str], market_type: str = 'A', min_score: int = 0, stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
         批量扫描股票
         
@@ -184,6 +185,7 @@ class StockAnalyzerService:
             market_type: 市场类型
             min_score: 最低评分阈值
             stream: 是否使用流式响应
+            analysis_days: AI分析使用的天数，默认30天
             
         Returns:
             异步生成器，生成扫描结果的JSON字符串
@@ -269,7 +271,7 @@ class StockAnalyzerService:
                         }, ensure_ascii=False)
                         
                         # AI分析
-                        async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df, stock_code, market_type, stream):
+                        async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df, stock_code, market_type, stream, analysis_days):
                             yield analysis_chunk
             
             # 输出扫描完成信息

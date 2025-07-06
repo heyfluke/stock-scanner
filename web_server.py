@@ -63,6 +63,7 @@ class AnalyzeRequest(BaseModel):
     api_key: Optional[str] = None
     api_model: Optional[str] = None
     api_timeout: Optional[str] = None
+    analysis_days: Optional[int] = 30  # AI分析使用的天数，默认30天
 
 class TestAPIRequest(BaseModel):
     api_url: str
@@ -192,8 +193,9 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
         custom_api_key = request.api_key
         custom_api_model = request.api_model
         custom_api_timeout = request.api_timeout
+        analysis_days = request.analysis_days or 30  # 默认30天
         
-        logger.debug(f"自定义API配置: URL={custom_api_url}, 模型={custom_api_model}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}")
+        logger.debug(f"自定义API配置: URL={custom_api_url}, 模型={custom_api_model}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
         
         # 创建新的分析器实例，使用自定义配置
         custom_analyzer = StockAnalyzerService(
@@ -222,7 +224,7 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
                 chunk_count = 0
                 
                 # 使用异步生成器
-                async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True):
+                async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days):
                     chunk_count += 1
                     # logger.debug(f"发送数据块 {chunk_count}: {chunk}")
                     yield chunk + '\n'
@@ -244,7 +246,8 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
                     [code.strip() for code in stock_codes], 
                     min_score=0, 
                     market_type=market_type,
-                    stream=True
+                    stream=True,
+                    analysis_days=analysis_days
                 ):
                     chunk_count += 1
                     logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")

@@ -76,6 +76,7 @@ export interface AnalyzeRequest {
   api_key?: string;
   api_model?: string;
   api_timeout?: number;
+  analysis_days?: number; // AI分析使用的天数，默认30天
 }
 
 export interface TestApiRequest {
