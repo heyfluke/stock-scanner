@@ -86,7 +86,7 @@ ANNOUNCEMENT_TEXT=your_text
 3.  **Container Manager**: 找到 `Registry`，搜索 `heyfluke/stock-scanner` ，选择`latest` tag，双击更新。
 4.  **Container Manager**: 回到 `stock-scanner` 项目，点击 `操作` -> `构建`。
 
-(如果是使用版本号tag，则更新`Project`再重新`Build`即可)。
+(如果是使用版本号tag，则更新`Project`中`YAML Configuration`中的tag，再重新`Build`即可)。
 
 ### 如何查看日志
 如果应用无法启动或运行异常，您可以在 Container Manager 中查看日志：
