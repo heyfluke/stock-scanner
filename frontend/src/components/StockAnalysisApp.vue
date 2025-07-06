@@ -147,13 +147,24 @@
           </n-grid>
         </n-card>
 
+        <div ref="resultsContainerRef" class="export-container">
+          <template v-if="analyzedStocks.length > 0">
+            <n-h2>分析结果</n-h2>
+            <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
+              <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
+                <StockCard :stock="stock" />
+              </n-grid-item>
+            </n-grid>
+          </template>
+        </div>
+
       </n-layout-content>
     </n-layout>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount } from 'vue';
+import { ref, onMounted, computed, onBeforeUnmount, h } from 'vue';
 import { 
   NLayout, 
   NLayoutContent, 
@@ -177,11 +188,15 @@ import { useClipboard } from '@vueuse/core'
 import { 
   DocumentTextOutline as DocumentTextIcon,
   DownloadOutline as DownloadIcon,
+  ImageOutline as ImageIcon,
+  DocumentOutline as PdfIcon,
+  GridOutline as ExcelIcon
 } from '@vicons/ionicons5';
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 import { get, set } from 'idb-keyval';
 import { marked } from 'marked';
+import html2canvas from 'html2canvas';
 
 import MarketTimeDisplay from './MarketTimeDisplay.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
@@ -211,6 +226,7 @@ const stockCodes = ref('');
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 const displayMode = ref<'card' | 'table'>('card');
+const resultsContainerRef = ref<HTMLElement | null>(null);
 
 // API配置
 const apiConfig = ref<ApiConfig>({
@@ -388,20 +404,28 @@ const stockTableColumns = ref<DataTableColumns<StockInfo>>([
 ]);
 
 // 导出选项
-const exportOptions = [
+const exportOptions = computed(() => [
+  {
+    label: '导出为图片 (JPG)',
+    key: 'jpg',
+    icon: () => h(NIcon, null, { default: () => h(ImageIcon) })
+  },
   {
     label: '导出为CSV',
-    key: 'csv'
+    key: 'csv',
+    icon: () => h(NIcon, null, { default: () => h(DownloadIcon) })
   },
   {
     label: '导出为Excel',
-    key: 'excel'
+    key: 'excel',
+    icon: () => h(NIcon, null, { default: () => h(ExcelIcon) })
   },
   {
     label: '导出为PDF',
-    key: 'pdf'
+    key: 'pdf',
+    icon: () => h(NIcon, null, { default: () => h(PdfIcon) })
   }
-];
+]);
 
 const showSearch = computed(() => 
   marketOptions.find(option => option.value === marketType.value)?.showSearch
@@ -836,10 +860,13 @@ function restoreLocalApiConfig() {
 }
 
 // 处理导出选择
-function handleExportSelect(key: string) {
+function handleExportSelect(key: 'csv' | 'jpg' | 'excel' | 'pdf') {
   switch (key) {
+    case 'jpg':
+      exportAsImage();
+      break;
     case 'csv':
-      exportToCSV();
+      exportToCsv();
       break;
     case 'excel':
       message.info('Excel导出功能即将推出');
@@ -850,8 +877,38 @@ function handleExportSelect(key: string) {
   }
 }
 
-// 导出为CSV
-function exportToCSV() {
+const exportAsImage = async () => {
+  if (!resultsContainerRef.value) {
+    message.error('无法找到要导出的内容。');
+    return;
+  }
+  
+  try {
+    message.loading('正在生成图片...', { duration: 0 });
+    const canvas = await html2canvas(resultsContainerRef.value, {
+      useCORS: true, // 允许加载跨域图片
+      scale: 2, // 提高分辨率
+      backgroundColor: '#f0f2f5' // 设置背景色，避免透明
+    });
+    
+    const dataUrl = canvas.toDataURL('image/jpeg');
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `stock-analysis-${new Date().toISOString().slice(0, 10)}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    message.destroyAll();
+    message.success('图片导出成功！');
+    
+  } catch (error) {
+    message.destroyAll();
+    message.error('图片导出失败。');
+    console.error('图片导出错误:', error);
+  }
+};
+
+const exportToCsv = () => {
   if (analyzedStocks.value.length === 0) {
     message.warning('没有可导出的分析结果');
     return;
@@ -904,7 +961,7 @@ function exportToCSV() {
     message.error('导出失败');
     console.error('导出CSV时出错:', error);
   }
-}
+};
 
 // 辅助函数：获取中文趋势描述
 function getChineseTrend(trend: string): string {
@@ -1299,5 +1356,24 @@ function handleAnnouncementClose() {
     margin: 2px 0 !important;
     border-radius: 4px !important;
   }
+}
+
+.export-container {
+  position: absolute;
+  left: -9999px; /* 将容器移出可视区域 */
+  top: auto;
+  width: 800px; /* 为导出设置一个固定的宽度 */
+  padding: 20px;
+  background-color: #f0f2f5;
+}
+
+/* 覆盖StockCard的样式，以便在导出时完全展开内容 */
+.export-container :deep(.analysis-result) {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+.export-container :deep(.chart-container) {
+  height: 400px; /* 确保图表在导出时有固定高度 */
 }
 </style>
