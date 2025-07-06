@@ -80,8 +80,12 @@ jobs:
   deploy:
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    env:
+      # First, check if the secret is set and store the result in an environment variable.
+      CAN_DEPLOY: ${{ secrets.SERVER_HOST != '' }}
+    # Then, check the environment variable in the job's if condition.
     if: |
-      (secrets.SERVER_HOST != '' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag')))
+      env.CAN_DEPLOY == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag'))
     
     steps:
     - name: Checkout code for prod compose file
