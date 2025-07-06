@@ -94,6 +94,8 @@ LOGIN_PASSWORD=登录密码(可选)
 ANNOUNCEMENT_TEXT=公告文本
 EOL
 
+# 请注意API_URL要有`/`结尾，例如：API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/
+
 # 创建SSL证书目录
 mkdir -p nginx/ssl
 
