@@ -2,9 +2,9 @@
 
 ## 简介
 
-基于 https://github.com/DR-lin-eng/stock-scanner 二次修改，感谢原作者  
+基于 https://github.com/DR-lin-eng/stock-scanner ( lanzhihong6/stock-scanner ) 二次修改，感谢原作者  
 
-## 功能变更
+## 功能变更（ lanzhihong6/stock-scanner ）
 
 1. 增加html页面，支持浏览器在线使用  
 2. 增加港股、美股支持  
