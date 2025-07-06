@@ -19,7 +19,7 @@
 
 ```
 # 拉取最新版本
-docker pull cassianvale/stock-scanner:latest
+docker pull heyfluke/stock-scanner:latest
 
 # 启动主应用容器
 docker run -d \
@@ -35,7 +35,7 @@ docker run -d \
   -e LOGIN_PASSWORD="你的登录密码" \
   -e ANNOUNCEMENT_TEXT="你的公告内容" \
   --restart unless-stopped \
-  cassianvale/stock-scanner:latest
+  heyfluke/stock-scanner:latest
   
 # 运行Nginx容器
 docker run -d \
@@ -76,7 +76,7 @@ API_URL 处理逻辑说明：
 
 ```shell
 # 克隆仓库
-git clone https://github.com/cassianvale/stock-scanner.git
+git clone https://github.com/heyfluke/stock-scanner.git
 cd stock-scanner
 
 # 创建.env文件并填写必要的环境变量
