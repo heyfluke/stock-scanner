@@ -77,15 +77,20 @@ jobs:
         cache-from: type=gha,scope=stock-scanner
         cache-to: type=gha,scope=stock-scanner,mode=max
 
-  deploy:
-    needs: [prepare, build]
+  check_secrets:
     runs-on: ubuntu-latest
-    env:
-      # First, check if the secret is set and store the result in an environment variable.
-      CAN_DEPLOY: ${{ secrets.SERVER_HOST != '' }}
-    # Then, check the environment variable in the job's if condition.
+    outputs:
+      can_deploy: ${{ steps.check.outputs.can_deploy }}
+    steps:
+      - name: Check for deploy secrets
+        id: check
+        run: echo "can_deploy=${{ secrets.SERVER_HOST != '' }}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: [prepare, build, check_secrets]
+    runs-on: ubuntu-latest
     if: |
-      env.CAN_DEPLOY == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag'))
+      needs.check_secrets.outputs.can_deploy == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag'))
     
     steps:
     - name: Checkout code for prod compose file
@@ -185,7 +190,7 @@ jobs:
           echo "部署完成并验证成功！"
   
   notify:
-    needs: [prepare, build, deploy]
+    needs: [prepare, build, deploy, check_secrets]
     runs-on: ubuntu-latest
     if: always()
     steps:
