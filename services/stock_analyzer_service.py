@@ -55,7 +55,9 @@ class StockAnalyzerService:
             logger.info(f"开始分析股票: {stock_code}, 市场: {market_type}")
             
             # 获取股票数据
+            logger.debug(f"准备从 data_provider 获取股票代码为 '{stock_code}' 的数据...")
             df = await self.data_provider.get_stock_data(stock_code, market_type)
+            logger.debug(f"从 data_provider 获取数据完成。DataFrame is empty: {df.empty}")
             
             # 检查是否有错误
             if hasattr(df, 'error'):
@@ -66,7 +68,7 @@ class StockAnalyzerService:
                     "market_type": market_type,
                     "error": error_msg,
                     "status": "error"
-                })
+                }, ensure_ascii=False)
                 return
             
             # 检查数据是否为空
@@ -78,7 +80,7 @@ class StockAnalyzerService:
                     "market_type": market_type,
                     "error": error_msg,
                     "status": "error"
-                })
+                }, ensure_ascii=False)
                 return
             
             # 计算技术指标
@@ -159,7 +161,7 @@ class StockAnalyzerService:
             
             # 输出基本分析结果
             logger.info(f"基本分析结果: {json.dumps(basic_result)}")
-            yield json.dumps(basic_result)
+            yield json.dumps(basic_result, ensure_ascii=False)
             
             # 使用AI进行深入分析
             async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df_with_indicators, stock_code, market_type, stream):
@@ -171,7 +173,7 @@ class StockAnalyzerService:
             error_msg = f"分析股票 {stock_code} 时出错: {str(e)}"
             logger.error(error_msg)
             logger.exception(e)
-            yield json.dumps({"error": error_msg})
+            yield json.dumps({"error": error_msg, "stock_code": stock_code}, ensure_ascii=False)
     
     async def scan_stocks(self, stock_codes: List[str], market_type: str = 'A', min_score: int = 0, stream: bool = False) -> AsyncGenerator[str, None]:
         """
@@ -195,10 +197,12 @@ class StockAnalyzerService:
                 "stock_codes": stock_codes,
                 "market_type": market_type,
                 "min_score": min_score
-            })
+            }, ensure_ascii=False)
             
             # 批量获取股票数据
+            logger.debug(f"准备从 data_provider 批量获取 {len(stock_codes)} 个股票代码的数据...")
             stock_data_dict = await self.data_provider.get_multiple_stocks_data(stock_codes, market_type)
+            logger.debug(f"批量获取数据完成。获取到 {len(stock_data_dict)} 个股票的数据。")
             
             # 计算技术指标
             stock_with_indicators = {}
@@ -212,7 +216,7 @@ class StockAnalyzerService:
                         "stock_code": code,
                         "error": f"计算技术指标时出错: {str(e)}",
                         "status": "error"
-                    })
+                    }, ensure_ascii=False)
             
             # 评分股票
             results = self.scorer.batch_score_stocks(stock_with_indicators)
@@ -248,7 +252,7 @@ class StockAnalyzerService:
                         "macd_signal": "BUY" if latest_data.get('MACD', 0) > latest_data.get('MACD_Signal', 0) else "SELL",
                         "volume_status": "HIGH" if latest_data.get('Volume_Ratio', 1) > 1.5 else ("LOW" if latest_data.get('Volume_Ratio', 1) < 0.5 else "NORMAL"),
                         "status": "completed" if score < min_score else "waiting"
-                    })
+                    }, ensure_ascii=False)
             
             # 如果需要进一步分析，对评分较高的股票进行AI分析
             if stream and filtered_results:
@@ -262,7 +266,7 @@ class StockAnalyzerService:
                         yield json.dumps({
                             "stock_code": stock_code,
                             "status": "analyzing"
-                        })
+                        }, ensure_ascii=False)
                         
                         # AI分析
                         async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df, stock_code, market_type, stream):
@@ -273,7 +277,7 @@ class StockAnalyzerService:
                 "scan_completed": True,
                 "total_scanned": len(results),
                 "total_matched": len(filtered_results)
-            })
+            }, ensure_ascii=False)
             
             logger.info(f"完成批量扫描 {len(stock_codes)} 只股票, 符合条件: {len(filtered_results)}")
             
@@ -281,4 +285,4 @@ class StockAnalyzerService:
             error_msg = f"批量扫描股票时出错: {str(e)}"
             logger.error(error_msg)
             logger.exception(e)
-            yield json.dumps({"error": error_msg})
+            yield json.dumps({"error": error_msg}, ensure_ascii=False)

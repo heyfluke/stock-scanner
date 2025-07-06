@@ -320,6 +320,8 @@ class AIAnalyzer:
                         
                         # 完整的分析内容
                         full_content = buffer
+                        logger.debug(f"full_content: {full_content}")
+                        # logger.debug(f"collected_messages: {collected_messages}")
                         
                         # 尝试从分析内容中提取投资建议
                         recommendation = self._extract_recommendation(full_content)

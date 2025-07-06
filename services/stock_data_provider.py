@@ -71,6 +71,9 @@ class StockDataProvider:
                     end_date=end_date,
                     adjust="qfq"
                 )
+                if df.empty:
+                    logger.warning(f"无法获取A股数据: {stock_code}，返回的DataFrame为空")
+                    return df
                 
             elif market_type in ['HK']:
                 logger.debug(f"获取港股数据: {stock_code}")
@@ -78,6 +81,9 @@ class StockDataProvider:
                     symbol=stock_code,
                     adjust="qfq"
                 )
+                if df.empty:
+                    logger.warning(f"无法获取港股数据: {stock_code}，返回的DataFrame为空")
+                    return df
                 
                 # 在获取数据后进行日期过滤
                 try:
@@ -123,6 +129,10 @@ class StockDataProvider:
                         symbol=stock_code,
                         adjust="qfq"
                     )
+                    if df.empty:
+                        logger.warning(f"无法获取美股数据: {stock_code}，返回的DataFrame为空")
+                        return df
+
                     logger.debug(f"美股数据原始列: {df.columns.tolist()}")
                     logger.debug(f"美股数据形状: {df.shape}")
                     
@@ -191,6 +201,9 @@ class StockDataProvider:
                     start_date=start_date.replace('-', ''),
                     end_date=end_date.replace('-', '')
                 )
+                if df.empty:
+                    logger.warning(f"无法获取ETF基金数据: {stock_code}，返回的DataFrame为空")
+                    return df
             elif market_type in ['LOF']:
                 logger.debug(f"获取{market_type}基金数据: {stock_code}")
                 df = ak.fund_lof_hist_em(
@@ -198,6 +211,9 @@ class StockDataProvider:
                     start_date=start_date.replace('-', ''),
                     end_date=end_date.replace('-', '')
                 )
+                if df.empty:
+                    logger.warning(f"无法获取LOF基金数据: {stock_code}，返回的DataFrame为空")
+                    return df
                 
             else:
                 error_msg = f"不支持的市场类型: {market_type}"
@@ -205,6 +221,10 @@ class StockDataProvider:
                 raise ValueError(error_msg)
                 
             # 标准化列名
+            if df.empty:
+                logger.debug(f"数据获取结果为空DataFrame，跳过列名标准化: {stock_code}")
+                return df
+                
             if market_type == 'A':
                 # 根据实际数据结构调整列名映射
                 # 实际数据列：['日期', '股票代码', '开盘', '收盘', '最高', '最低', '成交量', '成交额', '振幅', '涨跌幅', '涨跌额', '换手率']

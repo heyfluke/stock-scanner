@@ -1,9 +1,10 @@
 # 本地开发和手动构建场景
 
-version: '3.8'
+# version: '3.8'
 
 services:
   app:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile

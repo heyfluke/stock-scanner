@@ -8,6 +8,9 @@ from datetime import datetime
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(log_dir, exist_ok=True)
 
+# 从环境变量读取日志级别，默认为 INFO
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
 # 配置日志
 logger.remove()  # 移除默认的处理器
 
@@ -15,7 +18,7 @@ logger.remove()  # 移除默认的处理器
 logger.add(
     sys.stdout,
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO",   # 同时显示在控制台和写入到日志文件中
+    level=log_level,
 )
 
 # 添加统一的日志文件处理器，按日期自动轮转

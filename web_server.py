@@ -224,6 +224,7 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
                 # 使用异步生成器
                 async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True):
                     chunk_count += 1
+                    # logger.debug(f"发送数据块 {chunk_count}: {chunk}")
                     yield chunk + '\n'
                 
                 logger.info(f"股票 {stock_code} 流式分析完成，共发送 {chunk_count} 个块")
@@ -246,6 +247,7 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
                     stream=True
                 ):
                     chunk_count += 1
+                    logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
                     yield chunk + '\n'
                 
                 logger.info(f"批量流式分析完成，共发送 {chunk_count} 个块")
@@ -366,8 +368,12 @@ async def test_api_connection(request: TestAPIRequest, username: str = Depends(v
             logger.info(f"API 连接测试成功: {response.status_code}")
             return {"success": True, "message": "API 连接测试成功"}
         else:
-            error_data = response.json()
-            error_message = error_data.get('error', {}).get('message', '未知错误')
+            try:
+                error_data = response.json()
+                error_message = error_data.get('error', {}).get('message', str(error_data))
+            except json.JSONDecodeError:
+                error_message = response.text or "服务器返回了空的错误响应"
+            
             logger.warning(f"API连接测试失败: {response.status_code} - {error_message}")
             return JSONResponse(
                 status_code=400,

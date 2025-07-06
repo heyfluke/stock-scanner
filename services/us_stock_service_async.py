@@ -73,7 +73,12 @@ class USStockServiceAsync:
         
         try:
             # 获取美股数据
+            logger.info("准备调用 akshare.stock_us_spot_em() 获取全量美股数据...")
             df = ak.stock_us_spot_em()
+            logger.info(f"akshare.stock_us_spot_em() 调用完成。获取到 {len(df)} 行数据。")
+            if not df.empty:
+                logger.debug(f"数据列名: {df.columns.tolist()}")
+                logger.debug(f"数据前5行: \n{df.head().to_string()}")
             
             # 转换列名
             df = df.rename(columns={
