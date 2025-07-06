@@ -1,6 +1,9 @@
 name: Docker Build and Deploy
 
 on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags like v1.0, v1.2.3
   workflow_dispatch:
     inputs:
       deploy:
@@ -10,7 +13,6 @@ on:
 
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  TIME: ${{ github.run_number }}-${{ github.run_attempt }}
 
 jobs:
   prepare:
@@ -21,7 +23,15 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          echo "version=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+          # Check if the trigger was a tag push
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # Extract version from git tag (e.g., v1.2.3 -> 1.2.3)
+            VERSION=${{ github.ref_name }}
+            echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+          else
+            # Fallback to timestamp for manual runs
+            echo "version=$(date +'%Y%m%d%H%M%S')-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
 
   build:
     needs: prepare
@@ -51,7 +61,7 @@ jobs:
       with:
         images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner
         tags: |
-          type=raw,value=latest
+          type=raw,value=latest,enable={{is_default_branch}}
           type=raw,value=${{ needs.prepare.outputs.version }}
     
     - name: Build and push
@@ -61,6 +71,7 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=stock-scanner
         cache-to: type=gha,scope=stock-scanner,mode=max
 
@@ -68,7 +79,7 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     if: |
-      success() && inputs.deploy
+      success() && (github.event_name == 'workflow_dispatch' && inputs.deploy || github.event_name == 'push')
     
     steps:
     - name: Checkout code for prod compose file
@@ -101,28 +112,28 @@ jobs:
         envs: DEPLOY_PATH
         script: |
           # 创建备份目录（如果不存在）
-          mkdir -p ${DEPLOY_PATH}/backups
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/backups
           
           # 如果存在旧容器，备份当前的配置和数据
-          if [ -f ${DEPLOY_PATH}/docker-compose.prod.yml ]; then
-            cp ${DEPLOY_PATH}/docker-compose.prod.yml ${DEPLOY_PATH}/backups/docker-compose.prod.$(date +%Y%m%d%H%M%S).yml
-            if [ -f ${DEPLOY_PATH}/.env ]; then
-              cp ${DEPLOY_PATH}/.env ${DEPLOY_PATH}/backups/.env.$(date +%Y%m%d%H%M%S)
+          if [ -f ${{ secrets.DEPLOY_PATH }}/docker-compose.prod.yml ]; then
+            cp ${{ secrets.DEPLOY_PATH }}/docker-compose.prod.yml ${{ secrets.DEPLOY_PATH }}/backups/docker-compose.prod.$(date +%Y%m%d%H%M%S).yml
+            if [ -f ${{ secrets.DEPLOY_PATH }}/.env ]; then
+              cp ${{ secrets.DEPLOY_PATH }}/.env ${{ secrets.DEPLOY_PATH }}/backups/.env.$(date +%Y%m%d%H%M%S)
             fi
           fi
           
           # 创建nginx目录和日志目录（如果不存在）
-          mkdir -p ${DEPLOY_PATH}/nginx
-          mkdir -p ${DEPLOY_PATH}/nginx/logs
-          mkdir -p ${DEPLOY_PATH}/nginx/ssl
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx/logs
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx/ssl
           
           # 如果SSL证书不存在，创建自签名证书（仅用于测试）
-          if [ ! -f ${DEPLOY_PATH}/nginx/ssl/fullchain.pem ] || [ ! -f ${DEPLOY_PATH}/nginx/ssl/privkey.pem ]; then
+          if [ ! -f ${{ secrets.DEPLOY_PATH }}/nginx/ssl/fullchain.pem ] || [ ! -f ${{ secrets.DEPLOY_PATH }}/nginx/ssl/privkey.pem ]; then
             echo "SSL证书不存在，创建自签名证书..."
             openssl req -x509 -nodes -days 365 \
               -newkey rsa:2048 \
-              -keyout ${DEPLOY_PATH}/nginx/ssl/privkey.pem \
-              -out ${DEPLOY_PATH}/nginx/ssl/fullchain.pem \
+              -keyout ${{ secrets.DEPLOY_PATH }}/nginx/ssl/privkey.pem \
+              -out ${{ secrets.DEPLOY_PATH }}/nginx/ssl/fullchain.pem \
               -subj "/CN=localhost" \
               -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
             echo "自签名证书创建完成"
