@@ -158,6 +158,16 @@
           </template>
         </div>
 
+        <n-modal
+          v-model:show="showImageModal"
+          preset="card"
+          style="width: 90%; max-width: 600px;"
+          title="导出图片"
+        >
+          <p style="text-align: center;">请长按下方图片，然后选择"添加到照片"或"存储图像"。</p>
+          <img :src="exportedImageUrl" style="width: 100%; border-radius: 8px;" />
+        </n-modal>
+
       </n-layout-content>
     </n-layout>
   </div>
@@ -182,6 +192,8 @@ import {
   NText,
   NDataTable,
   NDropdown,
+  NModal,
+  NH2,
   type DataTableColumns
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
@@ -227,6 +239,8 @@ const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 const displayMode = ref<'card' | 'table'>('card');
 const resultsContainerRef = ref<HTMLElement | null>(null);
+const showImageModal = ref(false);
+const exportedImageUrl = ref('');
 
 // API配置
 const apiConfig = ref<ApiConfig>({
@@ -891,15 +905,9 @@ const exportAsImage = async () => {
       backgroundColor: '#f0f2f5' // 设置背景色，避免透明
     });
     
-    const dataUrl = canvas.toDataURL('image/jpeg');
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `stock-analysis-${new Date().toISOString().slice(0, 10)}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportedImageUrl.value = canvas.toDataURL('image/jpeg');
+    showImageModal.value = true;
     message.destroyAll();
-    message.success('图片导出成功！');
     
   } catch (error) {
     message.destroyAll();
