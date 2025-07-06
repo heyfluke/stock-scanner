@@ -115,28 +115,7 @@
       </div>
     </div>
     
-    <n-divider />
-    
-    <div class="card-content">
-      <template v-if="stock.analysisStatus === 'error'">
-        <div class="error-status">
-          <n-icon :component="AlertCircleIcon" class="error-icon" />
-          <span>{{ stock.error || '未知错误' }}</span>
-        </div>
-      </template>
-      
-      <template v-else-if="stock.analysisStatus === 'analyzing'">
-        <div class="analysis-result analysis-streaming" 
-             ref="analysisResultRef"
-             v-html="parsedAnalysis">
-        </div>
-      </template>
-      
-      <template v-else-if="stock.analysisStatus === 'completed'">
-        <div class="analysis-result analysis-completed" v-html="parsedAnalysis"></div>
-      </template>
-    </div>
-    
+    <!-- 图表放在AI分析上面 -->
     <div
       v-if="stock.chart_data && stock.chart_data.length"
       class="chart-container"
@@ -165,6 +144,28 @@
         autoresize
         :ref="el => { chartInstance = el }"
       />
+    </div>
+
+    <n-divider />
+    
+    <div class="card-content">
+      <template v-if="stock.analysisStatus === 'error'">
+        <div class="error-status">
+          <n-icon :component="AlertCircleIcon" class="error-icon" />
+          <span>{{ stock.error || '未知错误' }}</span>
+        </div>
+      </template>
+      
+      <template v-else-if="stock.analysisStatus === 'analyzing'">
+        <div class="analysis-result analysis-streaming" 
+             ref="analysisResultRef"
+             v-html="parsedAnalysis">
+        </div>
+      </template>
+      
+      <template v-else-if="stock.analysisStatus === 'completed'">
+        <div class="analysis-result analysis-completed" v-html="parsedAnalysis"></div>
+      </template>
     </div>
 
   </n-card>
@@ -1269,8 +1270,7 @@ defineExpose({
   border-radius: 4px;
   background-color: rgba(0, 0, 0, 0.01);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
-  max-height: 400px;
-  overflow-y: auto;
+  /* 移除max-height限制，避免多个滚动条 */
   word-break: break-word;
   hyphens: auto;
   width: 100%;
@@ -1278,55 +1278,23 @@ defineExpose({
   overflow-x: hidden;
   display: block; /* 确保显示为块级元素 */
   box-sizing: border-box; /* 确保padding不增加宽度 */
-  
-  /* 自定义滚动条样式 */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: rgba(32, 128, 240, 0.3) transparent; /* Firefox */
-  /* 改进滚动行为 */
-  scroll-behavior: smooth;
-  overflow-anchor: auto;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
-  will-change: scroll-position;
 }
 
-/* Webkit浏览器的滚动条样式 */
+/* 隐藏滚动条，因为不再需要 */
 .analysis-result::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none;
 }
 
-.analysis-result::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 3px;
-}
-
-.analysis-result::-webkit-scrollbar-thumb {
-  background-color: rgba(32, 128, 240, 0.3);
-  border-radius: 3px;
-  transition: background-color 0.3s ease;
-}
-
-.analysis-result::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(32, 128, 240, 0.5);
-}
-
-/* 在不滚动时隐藏滚动条，滚动时显示 */
-.analysis-result:not(:hover)::-webkit-scrollbar-thumb {
-  background-color: rgba(32, 128, 240, 0.1);
+.analysis-result {
+  scrollbar-width: none; /* Firefox */
 }
 
 .analysis-streaming {
   position: relative;
   border-left: 2px solid var(--n-info-color);
   animation: fadePulse 2s infinite;
-  /* 改进滚动行为 */
-  overflow-y: auto;
-  scroll-behavior: smooth;
-  will-change: scroll-position;
   /* 防止内容更新时的布局抖动 */
   contain: content;
-  scroll-padding-bottom: 20px;
 }
 
 /* 改进流式输出的动画效果，消除闪烁 */
@@ -1414,7 +1382,7 @@ defineExpose({
   background: rgba(0, 0, 0, 0.05);
   padding: 0.75rem;
   border-radius: 4px;
-  overflow-x: auto;
+  overflow-x: hidden; /* 隐藏水平滚动条 */
   margin: 0.75rem 0;
   border-left: 3px solid #2080f0;
   max-width: 100%;
@@ -1449,8 +1417,8 @@ defineExpose({
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   table-layout: fixed; /* 固定表格布局 */
   max-width: 100%;
-  display: block; /* 使表格成为块级元素 */
-  overflow-x: auto; /* 允许表格滚动 */
+  display: table; /* 恢复正常表格显示 */
+  word-wrap: break-word; /* 允许单词换行 */
 }
 
 .analysis-result :deep(th), .analysis-result :deep(td) {
@@ -1694,18 +1662,14 @@ defineExpose({
     font-size: 0.85rem;
     line-height: 1.65;
     padding: 0.6rem 0.5rem;
-    max-height: 350px;
     border-radius: 0.5rem;
     border: 1px solid rgba(0, 0, 0, 0.07);
     margin: 0.4rem 0;
     background-color: rgba(255, 255, 255, 0.7);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    -webkit-overflow-scrolling: touch; /* 加强iOS滚动平滑性 */
-    overscroll-behavior: contain; /* 防止滚动传播 */
-    touch-action: pan-y; /* 优化触摸滚动体验 */
     width: 100%; /* 占据全部可用宽度 */
     box-sizing: border-box;
-    position: relative; /* 确保滚动提示正确定位 */
+    position: relative;
     overflow-x: hidden !important; /* 强制禁止横向滚动 */
   }
   
@@ -1713,15 +1677,14 @@ defineExpose({
   .analysis-result :deep(table) {
     width: 100% !important;
     max-width: 100% !important;
-    display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    display: table;
     font-size: 0.8rem;
     border: none;
     border-radius: 0.4rem;
     margin: 0.7rem 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
     position: relative;
+    word-wrap: break-word;
   }
   
   /* 优化代码块在移动端的显示 */
@@ -1729,8 +1692,7 @@ defineExpose({
     font-size: 0.8rem;
     padding: 0.75rem 0.5rem;
     border-radius: 0.4rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
     margin: 0.7rem 0;
     background-color: rgba(0, 0, 0, 0.04);
     border-left: 3px solid rgba(32, 128, 240, 0.5);
@@ -1739,20 +1701,6 @@ defineExpose({
     white-space: pre-wrap;
     word-break: break-word;
     position: relative;
-  }
-  
-  /* 拖动滚动提示效果 - 恢复并优化 */
-  .analysis-result :deep(pre)::after,
-  .analysis-result :deep(table)::after {
-    content: '⟷';
-    position: absolute;
-    right: 5px;
-    bottom: 5px;
-    color: rgba(32, 128, 240, 0.5);
-    font-size: 12px;
-    opacity: 0.6;
-    pointer-events: none;
-    z-index: 3;
   }
   
   /* 改进链接触摸体验 */
@@ -1840,12 +1788,12 @@ defineExpose({
     font-size: 0.8rem;
     padding: 0.75rem 0.5rem;
     border-radius: 0.4rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
     margin: 0.7rem 0;
     background-color: rgba(0, 0, 0, 0.04);
     border-left: 3px solid rgba(32, 128, 240, 0.5);
     white-space: pre-wrap;
+    word-break: break-word;
   }
   
   .analysis-result :deep(code) {
@@ -1857,14 +1805,13 @@ defineExpose({
   
   /* 优化表格显示 */
   .analysis-result :deep(table) {
-    display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    display: table;
     width: 100%;
     border-radius: 0.4rem;
     margin: 0.7rem 0;
     font-size: 0.8rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+    word-wrap: break-word;
   }
   
   .analysis-result :deep(th), 
@@ -1896,32 +1843,6 @@ defineExpose({
     height: auto;
     border-radius: 0.4rem;
     margin: 0.7rem auto;
-  }
-  
-  /* 优化滚动条样式 */
-  .analysis-result::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-  
-  .analysis-result::-webkit-scrollbar-thumb {
-    background-color: rgba(32, 128, 240, 0.3);
-    border-radius: 2px;
-  }
-  
-  /* 滚动提示 */
-  .analysis-result::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 20px;
-    background: linear-gradient(to top, rgba(255, 255, 255, 0.7), transparent);
-    pointer-events: none;
-    opacity: 0.8;
-    border-radius: 0 0 0.5rem 0.5rem;
-    z-index: 2;
   }
 }
 
@@ -2047,7 +1968,6 @@ defineExpose({
     line-height: 1.6;
     padding: 0.5rem 0.4rem;
     margin: 0.2rem 0;
-    max-height: 300px;
     max-width: none; /* 移除宽度限制 */
     width: 100%; /* 占据全部可用宽度 */
     box-sizing: border-box;
