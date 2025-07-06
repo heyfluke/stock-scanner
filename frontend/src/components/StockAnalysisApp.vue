@@ -178,6 +178,10 @@ import {
   DocumentTextOutline as DocumentTextIcon,
   DownloadOutline as DownloadIcon,
 } from '@vicons/ionicons5';
+import VChart from 'vue-echarts';
+import type { EChartsOption } from 'echarts';
+import { get, set } from 'idb-keyval';
+import { marked } from 'marked';
 
 import MarketTimeDisplay from './MarketTimeDisplay.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
@@ -540,8 +544,11 @@ function handleStreamUpdate(data: StreamAnalysisUpdate) {
       stock.volume_status = data.volume_status;
     }
     
-    if (data.analysis_date !== undefined) {
-      stock.analysis_date = data.analysis_date;
+    if (data.analysis_date) stock.analysis_date = data.analysis_date;
+
+    if (data.chart_data) {
+      stock.chart_data = data.chart_data;
+      // console.log(`[StockAnalysisApp] Chart data received and set for ${stock.code}`, stock.chart_data);
     }
     
     // 使用Vue的响应式API更新数组

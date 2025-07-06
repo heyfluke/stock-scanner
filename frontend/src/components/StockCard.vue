@@ -137,6 +137,11 @@
       </template>
     </div>
     
+    <div class="chart-container" v-if="stock.chart_data && stock.chart_data.length > 0">
+      <n-divider dashed style="margin: 12px 0 8px 0">K线图</n-divider>
+      <v-chart class="chart" :option="chartOption" autoresize />
+    </div>
+
   </n-card>
 </template>
 
@@ -152,13 +157,244 @@ import {
 } from '@vicons/ionicons5';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
+import { use } from 'echarts/core';
+import { CanvasRenderer } from 'echarts/renderers';
+import { CandlestickChart, LineChart } from 'echarts/charts';
+import {
+  TitleComponent,
+  TooltipComponent,
+  GridComponent,
+  LegendComponent,
+  DataZoomComponent,
+  MarkAreaComponent
+} from 'echarts/components';
+import VChart, { THEME_KEY } from 'vue-echarts';
+import type { EChartsOption } from 'echarts';
+
+use([
+  CanvasRenderer,
+  CandlestickChart,
+  LineChart,
+  TitleComponent,
+  TooltipComponent,
+  GridComponent,
+  LegendComponent,
+  DataZoomComponent,
+  MarkAreaComponent
+]);
 
 const props = defineProps<{
   stock: StockInfo;
 }>();
 
+// DEBUGGING: Log the received stock prop
+// console.log('[StockCard] Received stock data:', props.stock);
+// if (props.stock.chart_data) {
+//   console.log('[StockCard] Chart data is present. Length:', props.stock.chart_data.length);
+// } else {
+//   console.log('[StockCard] Chart data is MISSING.');
+// }
+
 const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
+});
+
+const chartOption = computed<EChartsOption>(() => {
+  if (!props.stock.chart_data || props.stock.chart_data.length === 0) {
+    return {};
+  }
+  
+  console.log('[StockCard] Generating chart options for stock:', props.stock.code);
+
+  const chartData: any[] = props.stock.chart_data;
+  
+  // The data is an array of objects, e.g., {date: '...', open: ..., close: ...}
+  const dates = chartData.map(item => item.date);
+  const klineData = chartData.map(item => [
+    item.Open || item.open, 
+    item.Close || item.close, 
+    item.Low || item.low, 
+    item.High || item.high
+  ]);
+  const volumes = chartData.map((item, index) => [
+    index, 
+    item.Volume || item.volume, 
+    (item.Close || item.close) > (item.Open || item.open) ? 1 : -1
+  ]);
+
+  const calculateMA = (dayCount: number) => {
+    const result = [];
+    const closePrices = klineData.map(d => d[1]); // Close price is at index 1
+
+    for (let i = 0, len = closePrices.length; i < len; i++) {
+      if (i < dayCount - 1) {
+        result.push('-');
+        continue;
+      }
+      let sum = 0;
+      for (let j = 0; j < dayCount; j++) {
+        sum += closePrices[i - j];
+      }
+      result.push(parseFloat((sum / dayCount).toFixed(2)));
+    }
+    return result;
+  };
+
+  const ma5 = calculateMA(5);
+  const ma10 = calculateMA(10);
+  const ma20 = calculateMA(20);
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'cross'
+      }
+    },
+    legend: {
+      data: ['K线', 'MA5', 'MA10', 'MA20']
+    },
+    grid: [
+      {
+        left: '10%',
+        right: '8%',
+        height: '50%'
+      },
+      {
+        left: '10%',
+        right: '8%',
+        top: '65%',
+        height: '15%'
+      }
+    ],
+    xAxis: [
+      {
+        type: 'category',
+        data: dates,
+        scale: true,
+        boundaryGap: false,
+        axisLine: { onZero: false },
+        splitLine: { show: false },
+        min: 'dataMin',
+        max: 'dataMax'
+      },
+      {
+        type: 'category',
+        gridIndex: 1,
+        data: dates,
+        scale: true,
+        boundaryGap: false,
+        axisLine: { onZero: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        min: 'dataMin',
+        max: 'dataMax'
+      }
+    ],
+    yAxis: [
+      {
+        scale: true,
+        splitArea: {
+          show: true
+        }
+      },
+      {
+        scale: true,
+        gridIndex: 1,
+        splitNumber: 2,
+        axisLabel: { show: false },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false }
+      }
+    ],
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: [0, 1],
+        start: 50,
+        end: 100
+      },
+      {
+        show: true,
+        xAxisIndex: [0, 1],
+        type: 'slider',
+        top: '85%',
+        start: 50,
+        end: 100
+      }
+    ],
+    series: [
+      {
+        name: 'K线',
+        type: 'candlestick',
+        data: klineData,
+        itemStyle: {
+            color: '#ec0000',
+            color0: '#00da3c',
+            borderColor: '#8A0000',
+            borderColor0: '#008F28'
+        },
+        markPoint: {
+          label: {
+            formatter: function (param: any) {
+              return param != null ? Math.round(param.value) + '' : '';
+            }
+          },
+          data: [
+            {
+              name: 'max',
+              type: 'max',
+              valueDim: 'highest'
+            },
+            {
+              name: 'min',
+              type: 'min',
+              valueDim: 'lowest'
+            }
+          ]
+        }
+      },
+      {
+        name: 'MA5',
+        type: 'line',
+        data: ma5,
+        smooth: true,
+        lineStyle: {
+          opacity: 0.5
+        }
+      },
+      {
+        name: 'MA10',
+        type: 'line',
+        data: ma10,
+        smooth: true,
+        lineStyle: {
+          opacity: 0.5
+        }
+      },
+      {
+        name: 'MA20',
+        type: 'line',
+        data: ma20,
+        smooth: true,
+        lineStyle: {
+          opacity: 0.5
+        }
+      },
+      {
+        name: 'Volume',
+        type: 'bar',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: volumes.map(item => item[1]),
+        itemStyle: {
+          color: ({ dataIndex }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
+        }
+      }
+    ]
+  };
 });
 
 const lastAnalysisLength = ref(0);
@@ -1810,5 +2046,15 @@ function smoothScrollToBottom(element: HTMLElement) {
 /* 删除滚动控制面板样式 */
 .scroll-controls {
   display: none;
+}
+
+.chart-container {
+  margin-top: 16px;
+  height: 400px; /* 明确图表容器高度 */
+}
+
+.chart {
+  height: 100%;
+  width: 100%;
 }
 </style>

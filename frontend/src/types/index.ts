@@ -37,6 +37,7 @@ export interface StockInfo {
   macd_signal?: string;
   volume_status?: string;
   analysis_date?: string;
+  chart_data?: (string | number)[][];
 }
 
 export interface SearchResult {
@@ -44,6 +45,14 @@ export interface SearchResult {
   name: string;
   market: string;
   market_value?: number;
+  price_change?: number;
+  rsi?: number;
+  ma_trend?: string;
+  macd_signal?: string;
+  volume_status?: string;
+  analysis_date?: string;
+  ai_analysis_chunk?: string;
+  chart_data?: (string | number)[][];
 }
 
 export interface MarketStatus {
@@ -108,4 +117,5 @@ export interface StreamAnalysisUpdate {
   volume_status?: string;
   analysis_date?: string;
   ai_analysis_chunk?: string;
+  chart_data?: (string | number)[][];
 }

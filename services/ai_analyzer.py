@@ -77,7 +77,14 @@ class AIAnalyzer:
             
             # AI 分析内容
             # 最近14天的股票数据记录
-            recent_data = df.tail(14).to_dict('records')
+            recent_df = df.tail(14).copy()
+            recent_df.reset_index(inplace=True)
+            recent_df.rename(columns={'index': 'date'}, inplace=True)
+            # 确保日期列是字符串格式
+            recent_df['date'] = recent_df['date'].dt.strftime('%Y-%m-%d')
+            
+            recent_data = recent_df.to_dict('records')
+            logger.debug(f"recent_data for chart: {recent_data}")
             
             # 包含trend, volatility, volume_trend, rsi_level的字典
             technical_summary = {
@@ -193,19 +200,14 @@ class AIAnalyzer:
             async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
                 # 记录请求
                 logger.debug(f"发送AI请求: URL={api_url}, MODEL={self.API_MODEL}, STREAM={stream}")
+                logger.debug(f"完整的AI请求Prompt for {stock_code}:\n{prompt}")
                 
                 # 先发送技术指标数据
                 yield json.dumps({
                     "stock_code": stock_code,
                     "status": "analyzing",
-                    "rsi": rsi,
-                    "price": price,
-                    "price_change": price_change,
-                    "ma_trend": ma_trend,
-                    "macd_signal": macd_signal_type,
-                    "volume_status": volume_status,
-                    "analysis_date": analysis_date
-                })
+                    "chart_data": recent_data
+                }, ensure_ascii=False)
                 
                 if stream:
                     # 流式响应处理
