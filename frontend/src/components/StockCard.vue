@@ -142,7 +142,23 @@
       class="chart-container"
       :data-chart-option="JSON.stringify(chartOption)"
     >
-      <n-divider dashed style="margin: 12px 0 8px 0">K线图</n-divider>
+      <div class="chart-header">
+        <n-divider dashed style="margin: 12px 0 8px 0">K线图</n-divider>
+        <div class="chart-controls">
+          <n-switch
+            v-model:value="showBollinger"
+            size="small"
+            @update:value="updateChart"
+          >
+            <template #checked>
+              BOLL
+            </template>
+            <template #unchecked>
+              BOLL
+            </template>
+          </n-switch>
+        </div>
+      </div>
       <v-chart
         class="chart"
         :option="chartOption"
@@ -156,7 +172,7 @@
 
 <script setup lang="ts">
 import { computed, watch, ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { NCard, NDivider, NIcon, NTag, NButton, useMessage } from 'naive-ui';
+import { NCard, NDivider, NIcon, NTag, NButton, NSwitch, useMessage } from 'naive-ui';
 import { 
   AlertCircleOutline as AlertCircleIcon,
   CalendarOutline,
@@ -199,6 +215,7 @@ const props = defineProps<{
 }>();
 
 const chartInstance = ref<any>(null);
+const showBollinger = ref(false);
 
 const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
@@ -206,15 +223,11 @@ const isAnalyzing = computed(() => {
 
 const chartOption = ref<EChartsOption>({});
 
-watch(() => props.stock.chart_data, (newChartData) => {
-  if (!newChartData || newChartData.length === 0) {
-    return;
-  }
+const generateChartOption = () => {
+  const chartData: any[] = props.stock.chart_data || [];
+  if (chartData.length === 0) return {};
 
-  // The chart option logic should only run once when data is available.
   console.log(`[StockCard] Generating chart options for stock: ${props.stock.code}`);
-
-  const chartData: any[] = newChartData;
   
   // The data is an array of objects, e.g., {date: '...', open: ..., close: ...}
   const dates = chartData.map(item => item.date);
@@ -252,7 +265,128 @@ watch(() => props.stock.chart_data, (newChartData) => {
   const ma10 = calculateMA(10);
   const ma20 = calculateMA(20);
 
-  chartOption.value = {
+  // 提取布林带数据
+  const bollMiddle = chartData.map(item => item.BB_Middle || null);
+  const bollUpper = chartData.map(item => item.BB_Upper || null);
+  const bollLower = chartData.map(item => item.BB_Lower || null);
+
+  // 基础图例数据
+  const legendData = ['日K', 'MA5', 'MA10', 'MA20'];
+  if (showBollinger.value) {
+    legendData.push('BOLL中轨', 'BOLL上轨', 'BOLL下轨');
+  }
+
+  // 基础系列数据
+  const series: any[] = [
+    {
+      name: '日K',
+      type: 'candlestick',
+      data: klineData,
+      itemStyle: {
+          color: '#ec0000',
+          color0: '#00da3c',
+          borderColor: '#8A0000',
+          borderColor0: '#008F28'
+      },
+      markPoint: {
+        label: {
+          formatter: function (param: any) {
+            return param != null ? Math.round(param.value) + '' : '';
+          }
+        },
+        data: [
+          {
+            name: 'max',
+            type: 'max',
+            valueDim: 'highest'
+          },
+          {
+            name: 'min',
+            type: 'min',
+            valueDim: 'lowest'
+          }
+        ]
+      }
+    },
+    {
+      name: 'MA5',
+      type: 'line',
+      data: ma5,
+      smooth: true,
+      lineStyle: {
+        opacity: 0.5
+      }
+    },
+    {
+      name: 'MA10',
+      type: 'line',
+      data: ma10,
+      smooth: true,
+      lineStyle: {
+        opacity: 0.5
+      }
+    },
+    {
+      name: 'MA20',
+      type: 'line',
+      data: ma20,
+      smooth: true,
+      lineStyle: {
+        opacity: 0.5
+      }
+    },
+    {
+      name: 'Volume',
+      type: 'bar',
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+      data: volumes.map(item => item[1]),
+      itemStyle: {
+        color: ({ dataIndex }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
+      }
+    }
+  ];
+
+  // 如果显示布林带，添加布林带系列
+  if (showBollinger.value) {
+    series.push(
+      {
+        name: 'BOLL中轨',
+        type: 'line',
+        data: bollMiddle,
+        smooth: true,
+        lineStyle: {
+          color: '#FFA500',
+          width: 1,
+          opacity: 0.8
+        }
+      },
+      {
+        name: 'BOLL上轨',
+        type: 'line',
+        data: bollUpper,
+        smooth: true,
+        lineStyle: {
+          color: '#FF6B6B',
+          width: 1,
+          opacity: 0.6
+        }
+      },
+      {
+        name: 'BOLL下轨',
+        type: 'line',
+        data: bollLower,
+        smooth: true,
+        lineStyle: {
+          color: '#4ECDC4',
+          width: 1,
+          opacity: 0.6
+        }
+      }
+    );
+  }
+
+  return {
     tooltip: {
       trigger: 'axis',
       axisPointer: {
@@ -260,7 +394,7 @@ watch(() => props.stock.chart_data, (newChartData) => {
       }
     },
     legend: {
-      data: ['日K', 'MA5', 'MA10', 'MA20']
+      data: legendData
     },
     grid: [
       {
@@ -401,8 +535,21 @@ watch(() => props.stock.chart_data, (newChartData) => {
           color: ({ dataIndex }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
         }
       }
-    ]
+    ],
+    series: series
   };
+};
+
+// 更新图表
+const updateChart = () => {
+  chartOption.value = generateChartOption();
+};
+
+// 监听图表数据变化
+watch(() => props.stock.chart_data, (newChartData) => {
+  if (newChartData && newChartData.length > 0) {
+    updateChart();
+  }
 }, { deep: true, once: true });
 
 const lastAnalysisLength = ref(0);
@@ -2076,6 +2223,19 @@ defineExpose({
 .chart-container {
   margin-top: 16px;
   height: 400px; /* 明确图表容器高度 */
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .chart {
