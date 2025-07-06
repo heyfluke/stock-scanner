@@ -82,9 +82,8 @@ ANNOUNCEMENT_TEXT=your_text
 
 ### 如何更新项目
 1.  **Container Manager**: 找到 `stock-scanner` 项目，点击 `操作` -> `停止`。
-2.  **File Station**: 删除 `docker/stock-scanner` 文件夹内的**所有旧文件和文件夹**，但**保留您的 `.env` 配置文件**。
-3.  **下载并上传**: 重新从 GitHub 下载最新的 ZIP 包，解压后，将里面的新文件和文件夹上传到 `docker/stock-scanner` 目录中。
-4.  **Container Manager**: 回到 `stock-scanner` 项目，点击 `操作` -> `启动`。它会自动使用新的文件重新构建并启动。
+2.  **Container Manager**: 回到 `stock-scanner` 项目，点击 `操作` -> `构建`。
+3. 再重新启动。
 
 ### 如何查看日志
 如果应用无法启动或运行异常，您可以在 Container Manager 中查看日志：
