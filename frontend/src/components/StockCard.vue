@@ -199,14 +199,17 @@ const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
 });
 
-const chartOption = computed<EChartsOption>(() => {
-  if (!props.stock.chart_data || props.stock.chart_data.length === 0) {
-    return {};
-  }
-  
-  console.log('[StockCard] Generating chart options for stock:', props.stock.code);
+const chartOption = ref<EChartsOption>({});
 
-  const chartData: any[] = props.stock.chart_data;
+watch(() => props.stock.chart_data, (newChartData) => {
+  if (!newChartData || newChartData.length === 0) {
+    return;
+  }
+
+  // The chart option logic should only run once when data is available.
+  console.log(`[StockCard] Generating chart options for stock: ${props.stock.code}`);
+
+  const chartData: any[] = newChartData;
   
   // The data is an array of objects, e.g., {date: '...', open: ..., close: ...}
   const dates = chartData.map(item => item.date);
@@ -244,7 +247,7 @@ const chartOption = computed<EChartsOption>(() => {
   const ma10 = calculateMA(10);
   const ma20 = calculateMA(20);
 
-  return {
+  chartOption.value = {
     tooltip: {
       trigger: 'axis',
       axisPointer: {
@@ -271,7 +274,6 @@ const chartOption = computed<EChartsOption>(() => {
       {
         type: 'category',
         data: dates,
-        scale: true,
         boundaryGap: false,
         axisLine: { onZero: false },
         splitLine: { show: false },
@@ -282,7 +284,6 @@ const chartOption = computed<EChartsOption>(() => {
         type: 'category',
         gridIndex: 1,
         data: dates,
-        scale: true,
         boundaryGap: false,
         axisLine: { onZero: false },
         axisTick: { show: false },
@@ -395,7 +396,7 @@ const chartOption = computed<EChartsOption>(() => {
       }
     ]
   };
-});
+}, { deep: true, once: true });
 
 const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
