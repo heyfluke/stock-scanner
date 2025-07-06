@@ -914,13 +914,28 @@ const exportAsImage = async () => {
   const container = resultsContainerRef.value;
   // 保存原始样式以便恢复
   const originalWidth = container.style.width;
+  const originalPosition = container.style.position;
 
   try {
     message.loading('正在生成图片...', { duration: 0 });
 
+    // 确保容器在屏幕内并有固定宽度
+    container.style.position = 'static'; // 移回正常文档流
+    container.style.left = '0px'; // 移除off-screen定位
+    container.style.width = '1200px'; // 设置固定宽度（根据需要调整）
+    
+    // 强制设置StockCard和图表容器的尺寸
+    const chartContainers = container.querySelectorAll('.chart-container');
+    chartContainers.forEach((chartContainer: HTMLElement) => {
+      chartContainer.style.width = '100%'; // 确保图表容器占满父容器
+      chartContainer.style.height = '400px'; // 固定高度
+    });
+
+    // 获取图表数据URL
     const chartImagesDataURLs = stockCardRefs.value.map(ref => ref?.getChartDataURL() ?? null);
 
-    container.style.width = `${document.documentElement.clientWidth}px`;
+    // 等待ECharts重新渲染
+    await new Promise(resolve => setTimeout(resolve, 500)); // 等待图表调整大小
 
     const canvas = await html2canvas(resultsContainerRef.value, {
       useCORS: true,
@@ -933,10 +948,10 @@ const exportAsImage = async () => {
           if (dataURL) {
             const originalChart = chartContainer.querySelector('.chart');
             if (originalChart) (originalChart as HTMLElement).style.display = 'none';
-
             const img = clonedDoc.createElement('img');
             img.src = dataURL;
             img.style.width = '100%';
+            img.style.height = '400px'; // 确保图片高度一致
             chartContainer.appendChild(img);
           }
         });
