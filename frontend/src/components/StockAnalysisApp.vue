@@ -919,29 +919,63 @@ const exportAsImage = async () => {
   try {
     message.loading('正在生成图片...', { duration: 0 });
 
-    // 确保容器在屏幕内并有固定宽度
+    // 获取设备像素比率
+    const dpr = window.devicePixelRatio || 1;
+
+    // 设置容器尺寸，根据设备类型调整
     container.style.position = 'static'; // 移回正常文档流
-    container.style.left = '0px'; // 移除off-screen定位
-    container.style.width = '1200px'; // 设置固定宽度（根据需要调整）
+    container.style.left = '0px';
     
-    // 强制设置StockCard和图表容器的尺寸
+    // 根据设备类型设置导出宽度，考虑当前视口宽度
+    const isMobile = window.innerWidth <= 768;
+    const exportWidth = isMobile ? Math.min(window.innerWidth, 600) : 1200; // 移动设备使用当前视口宽度
+    container.style.width = `${exportWidth}px`;
+    
+    // 确保容器字体大小与当前渲染一致
+    const computedStyle = window.getComputedStyle(container);
+    const currentFontSize = computedStyle.fontSize;
+    container.style.fontSize = currentFontSize;
+
+    // 强制设置图表容器尺寸，确保图表占满容器
     const chartContainers = container.querySelectorAll('.chart-container');
-    chartContainers.forEach((chartContainer: HTMLElement) => {
-      chartContainer.style.width = '100%'; // 确保图表容器占满父容器
-      chartContainer.style.height = '400px'; // 固定高度
+    chartContainers.forEach((chartContainer) => {
+      const element = chartContainer as HTMLElement;
+      element.style.width = '100%'; // 占满父容器
+      element.style.height = '400px'; // 固定高度，不考虑DPR避免双重缩放
     });
 
-    // 获取图表数据URL
-    const chartImagesDataURLs = stockCardRefs.value.map(ref => ref?.getChartDataURL() ?? null);
+    // 强制调整图表大小
+    stockCardRefs.value.forEach(ref => {
+      if (ref && ref.resizeChart) {
+        ref.resizeChart();
+      }
+    });
 
-    // 等待ECharts重新渲染
-    await new Promise(resolve => setTimeout(resolve, 500)); // 等待图表调整大小
+    // 等待图表渲染完成
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 获取图表数据URL，使用较高的像素比率确保清晰度
+    const chartImagesDataURLs = stockCardRefs.value.map(ref => {
+      if (ref && ref.getChartDataURL) {
+        return ref.getChartDataURL({
+          type: 'jpeg',
+          pixelRatio: Math.max(dpr, 2), // 确保图表至少2倍清晰度
+          backgroundColor: '#fff'
+        });
+      }
+      return null;
+    });
 
     const canvas = await html2canvas(resultsContainerRef.value, {
       useCORS: true,
-      scale: window.devicePixelRatio || 2,
+      scale: 1, // 固定为1，避免字体缩放问题
       backgroundColor: '#f0f2f5',
+      // 移除固定宽高，让html2canvas自动计算
+      allowTaint: false, // 禁用allowTaint，避免canvas污染
+      foreignObjectRendering: false, // 禁用foreignObject，可能导致渲染问题
+      logging: false, // 禁用日志
       onclone: (clonedDoc) => {
+        // 简化处理，只处理图表替换
         const allChartContainers = clonedDoc.querySelectorAll('.chart-container');
         allChartContainers.forEach((chartContainer, index) => {
           const dataURL = chartImagesDataURLs[index];
@@ -952,7 +986,8 @@ const exportAsImage = async () => {
             img.src = dataURL;
             img.style.width = '100%';
             img.style.height = '400px'; // 确保图片高度一致
-            chartContainer.appendChild(img);
+            img.style.display = 'block';
+            (chartContainer as HTMLElement).appendChild(img);
           }
         });
       }
