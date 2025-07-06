@@ -897,11 +897,20 @@ const exportAsImage = async () => {
     return;
   }
   
+  const container = resultsContainerRef.value;
+  // 保存原始样式以便恢复
+  const originalWidth = container.style.width;
+
   try {
     message.loading('正在生成图片...', { duration: 0 });
+
+    // 根据视口动态设置容器宽度，以触发正确的响应式布局
+    const isMobile = window.innerWidth <= 768;
+    container.style.width = isMobile ? '414px' : '800px';
+
     const canvas = await html2canvas(resultsContainerRef.value, {
-      useCORS: true, // 允许加载跨域图片
-      scale: 2, // 提高分辨率
+      useCORS: true,
+      scale: window.devicePixelRatio || 2,
       backgroundColor: '#f0f2f5' // 设置背景色，避免透明
     });
     
@@ -913,6 +922,9 @@ const exportAsImage = async () => {
     message.destroyAll();
     message.error('图片导出失败。');
     console.error('图片导出错误:', error);
+  } finally {
+    // 截图后恢复容器的原始宽度
+    container.style.width = originalWidth;
   }
 };
 
@@ -1370,7 +1382,6 @@ function handleAnnouncementClose() {
   position: absolute;
   left: -9999px; /* 将容器移出可视区域 */
   top: auto;
-  width: 800px; /* 为导出设置一个固定的宽度 */
   padding: 20px;
   background-color: #f0f2f5;
 }
