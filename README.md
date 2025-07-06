@@ -20,6 +20,8 @@
 > [!NOTE]
 > 对于在 **Synology NAS** 等特定设备上的部署，请参考我们的 [Synology NAS 部署指南](./docs/README.synology.md)。
 
+![Stock Scanner 示例图片](./docs/stock-scanner-sample.png)
+
 ```
 # 拉取最新版本
 docker pull heyfluke/stock-scanner:latest
