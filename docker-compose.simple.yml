@@ -4,7 +4,7 @@ version: '3.8'
 
 services:
   app:
-    image: cassianvale/stock-scanner:latest
+    image: heyfluke/stock-scanner:latest
     container_name: stock-scanner-app
     ports:
       - "8888:8888"
