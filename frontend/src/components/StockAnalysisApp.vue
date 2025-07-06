@@ -122,8 +122,11 @@
                 
                 <template v-else-if="displayMode === 'card'">
                   <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
-                    <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
-                      <StockCard :stock="stock" />
+                    <n-grid-item v-for="(stock, index) in analyzedStocks" :key="stock.code">
+                      <StockCard 
+                        :stock="stock" 
+                        :ref="el => { if (el) stockCardRefs[index] = el }"
+                      />
                     </n-grid-item>
                   </n-grid>
                 </template>
@@ -164,8 +167,13 @@
           style="width: 90%; max-width: 600px;"
           title="导出图片"
         >
-          <p style="text-align: center;">请长按下方图片，然后选择"添加到照片"或"存储图像"。</p>
+          <p style="text-align: center;">右键点击下方图片选择"图片另存为"，或使用下载按钮。</p>
           <img :src="exportedImageUrl" style="width: 100%; border-radius: 8px;" />
+          <template #footer>
+            <n-space justify="end">
+              <n-button type="primary" @click="downloadExportedImage">下载图片</n-button>
+            </n-space>
+          </template>
         </n-modal>
 
       </n-layout-content>
@@ -174,7 +182,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount, h } from 'vue';
+import { ref, onMounted, computed, onBeforeUnmount, h, watch } from 'vue';
 import { 
   NLayout, 
   NLayoutContent, 
@@ -209,6 +217,7 @@ import type { EChartsOption } from 'echarts';
 import { get, set } from 'idb-keyval';
 import { marked } from 'marked';
 import html2canvas from 'html2canvas';
+import * as echarts from 'echarts';
 
 import MarketTimeDisplay from './MarketTimeDisplay.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
@@ -891,6 +900,11 @@ function handleExportSelect(key: 'csv' | 'jpg' | 'excel' | 'pdf') {
   }
 }
 
+const stockCardRefs = ref<any[]>([]);
+watch(analyzedStocks, () => {
+  stockCardRefs.value = [];
+});
+
 const exportAsImage = async () => {
   if (!resultsContainerRef.value) {
     message.error('无法找到要导出的内容。');
@@ -904,14 +918,29 @@ const exportAsImage = async () => {
   try {
     message.loading('正在生成图片...', { duration: 0 });
 
-    // 根据视口动态设置容器宽度，以触发正确的响应式布局
-    const isMobile = window.innerWidth <= 768;
-    container.style.width = isMobile ? '414px' : '800px';
+    const chartImagesDataURLs = stockCardRefs.value.map(ref => ref?.getChartDataURL() ?? null);
+
+    container.style.width = `${document.documentElement.clientWidth}px`;
 
     const canvas = await html2canvas(resultsContainerRef.value, {
       useCORS: true,
       scale: window.devicePixelRatio || 2,
-      backgroundColor: '#f0f2f5' // 设置背景色，避免透明
+      backgroundColor: '#f0f2f5',
+      onclone: (clonedDoc) => {
+        const allChartContainers = clonedDoc.querySelectorAll('.chart-container');
+        allChartContainers.forEach((chartContainer, index) => {
+          const dataURL = chartImagesDataURLs[index];
+          if (dataURL) {
+            const originalChart = chartContainer.querySelector('.chart');
+            if (originalChart) (originalChart as HTMLElement).style.display = 'none';
+
+            const img = clonedDoc.createElement('img');
+            img.src = dataURL;
+            img.style.width = '100%';
+            chartContainer.appendChild(img);
+          }
+        });
+      }
     });
     
     exportedImageUrl.value = canvas.toDataURL('image/jpeg');
@@ -926,6 +955,20 @@ const exportAsImage = async () => {
     // 截图后恢复容器的原始宽度
     container.style.width = originalWidth;
   }
+};
+
+// 下载导出的图片
+const downloadExportedImage = () => {
+  if (!exportedImageUrl.value) {
+    message.error('没有可下载的图片');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = exportedImageUrl.value;
+  link.download = `股票分析结果_${new Date().toISOString().split('T')[0]}.jpg`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 const exportToCsv = () => {

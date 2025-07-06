@@ -137,9 +137,18 @@
       </template>
     </div>
     
-    <div class="chart-container" v-if="stock.chart_data && stock.chart_data.length > 0">
+    <div
+      v-if="stock.chart_data && stock.chart_data.length"
+      class="chart-container"
+      :data-chart-option="JSON.stringify(chartOption)"
+    >
       <n-divider dashed style="margin: 12px 0 8px 0">K线图</n-divider>
-      <v-chart class="chart" :option="chartOption" autoresize />
+      <v-chart
+        class="chart"
+        :option="chartOption"
+        autoresize
+        :ref="el => { chartInstance = el }"
+      />
     </div>
 
   </n-card>
@@ -153,7 +162,9 @@ import {
   CalendarOutline,
   CopyOutline,
   HourglassOutline,
-  ReloadOutline
+  ReloadOutline,
+  CheckmarkCircleOutline,
+  SyncOutline
 } from '@vicons/ionicons5';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
@@ -187,13 +198,7 @@ const props = defineProps<{
   stock: StockInfo;
 }>();
 
-// DEBUGGING: Log the received stock prop
-// console.log('[StockCard] Received stock data:', props.stock);
-// if (props.stock.chart_data) {
-//   console.log('[StockCard] Chart data is present. Length:', props.stock.chart_data.length);
-// } else {
-//   console.log('[StockCard] Chart data is MISSING.');
-// }
+const chartInstance = ref<any>(null);
 
 const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
@@ -255,7 +260,7 @@ watch(() => props.stock.chart_data, (newChartData) => {
       }
     },
     legend: {
-      data: ['K线', 'MA5', 'MA10', 'MA20']
+      data: ['日K', 'MA5', 'MA10', 'MA20']
     },
     grid: [
       {
@@ -267,13 +272,14 @@ watch(() => props.stock.chart_data, (newChartData) => {
         left: '10%',
         right: '8%',
         top: '65%',
-        height: '15%'
+        height: '16%'
       }
     ],
     xAxis: [
       {
         type: 'category',
         data: dates,
+        scale: true,
         boundaryGap: false,
         axisLine: { onZero: false },
         splitLine: { show: false },
@@ -284,6 +290,7 @@ watch(() => props.stock.chart_data, (newChartData) => {
         type: 'category',
         gridIndex: 1,
         data: dates,
+        scale: true,
         boundaryGap: false,
         axisLine: { onZero: false },
         axisTick: { show: false },
@@ -314,7 +321,7 @@ watch(() => props.stock.chart_data, (newChartData) => {
       {
         type: 'inside',
         xAxisIndex: [0, 1],
-        start: 50,
+        start: 0,
         end: 100
       },
       {
@@ -322,13 +329,13 @@ watch(() => props.stock.chart_data, (newChartData) => {
         xAxisIndex: [0, 1],
         type: 'slider',
         top: '85%',
-        start: 50,
+        start: 0,
         end: 100
       }
     ],
     series: [
       {
-        name: 'K线',
+        name: '日K',
         type: 'candlestick',
         data: klineData,
         itemStyle: {
@@ -742,6 +749,23 @@ function smoothScrollToBottom(element: HTMLElement) {
     behavior: 'smooth'
   });
 }
+
+const getChartDataURL = () => {
+  if (chartInstance.value) {
+    // 使用 ECharts 的 API 生成图片
+    // 缩放操作由 html2canvas 统一处理，避免双重缩放。
+    return chartInstance.value.getDataURL({
+      type: 'png',
+      pixelRatio: 1, 
+      backgroundColor: '#f0f2f5' // 匹配截图背景色
+    });
+  }
+  return null;
+};
+
+defineExpose({
+  getChartDataURL
+});
 </script>
 
 <style scoped>
