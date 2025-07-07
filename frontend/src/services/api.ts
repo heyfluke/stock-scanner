@@ -1,5 +1,10 @@
 import axios from 'axios';
-import type { AnalyzeRequest, TestApiRequest, TestApiResponse, SearchResult, LoginRequest, LoginResponse } from '@/types';
+import type { 
+  AnalyzeRequest, TestApiRequest, TestApiResponse, SearchResult, 
+  LoginRequest, LoginResponse, UserRegisterRequest, UserProfile,
+  UserFavorite, FavoriteRequest, AnalysisHistoryItem, 
+  UserSettings, UserSettingsRequest 
+} from '@/types';
 
 // API前缀
 const API_PREFIX = '/api';
@@ -39,7 +44,29 @@ axiosInstance.interceptors.response.use(
 );
 
 export const apiService = {
-  // 用户登录
+  // 用户注册
+  register: async (request: UserRegisterRequest): Promise<LoginResponse> => {
+    try {
+      const response = await axiosInstance.post('/register', request);
+      if (response.data.access_token) {
+        localStorage.setItem('token', response.data.access_token);
+      }
+      return response.data;
+    } catch (error: any) {
+      if (error.response) {
+        return {
+          success: false,
+          message: error.response.data.detail || '注册失败',
+        };
+      }
+      return {
+        success: false,
+        message: error.message || '注册失败'
+      };
+    }
+  },
+
+  // 用户登录（升级版）
   login: async (request: LoginRequest): Promise<LoginResponse> => {
     try {
       const response = await axiosInstance.post('/login', request);
@@ -73,11 +100,87 @@ export const apiService = {
     }
   },
 
+  // 获取用户信息
+  getUserProfile: async (): Promise<UserProfile | null> => {
+    try {
+      const response = await axiosInstance.get('/user/profile');
+      return response.data;
+    } catch (error) {
+      return null;
+    }
+  },
+
   // 登出
   logout: () => {
     localStorage.removeItem('token');
     // 简化登出逻辑
     window.location.href = '/login';
+  },
+
+  // 收藏功能
+  addFavorite: async (request: FavoriteRequest): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await axiosInstance.post('/user/favorites', request);
+      return { success: true, message: response.data.message };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '添加收藏失败'
+      };
+    }
+  },
+
+  removeFavorite: async (stockCode: string, marketType: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await axiosInstance.delete(`/user/favorites/${stockCode}?market_type=${marketType}`);
+      return { success: true, message: response.data.message };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '移除收藏失败'
+      };
+    }
+  },
+
+  getFavorites: async (): Promise<UserFavorite[]> => {
+    try {
+      const response = await axiosInstance.get('/user/favorites');
+      return response.data.favorites || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
+  // 历史记录功能
+  getAnalysisHistory: async (limit: number = 50): Promise<AnalysisHistoryItem[]> => {
+    try {
+      const response = await axiosInstance.get(`/user/history?limit=${limit}`);
+      return response.data.history || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
+  // 用户设置功能
+  updateUserSettings: async (settings: UserSettingsRequest): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await axiosInstance.put('/user/settings', settings);
+      return { success: true, message: response.data.message };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '设置更新失败'
+      };
+    }
+  },
+
+  getUserSettings: async (): Promise<UserSettings | null> => {
+    try {
+      const response = await axiosInstance.get('/user/settings');
+      return response.data.settings;
+    } catch (error) {
+      return null;
+    }
   },
 
   // 分析股票

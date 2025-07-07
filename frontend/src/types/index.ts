@@ -9,7 +9,8 @@ export interface ApiConfig {
 
 // 登录相关类型
 export interface LoginRequest {
-  password: string;
+  password?: string;  // 兼容旧版密码登录
+  username?: string;  // 新用户系统登录
 }
 
 export interface LoginResponse {
@@ -17,6 +18,63 @@ export interface LoginResponse {
   token_type?: string;
   success?: boolean;
   message?: string;
+  user?: UserProfile;
+}
+
+// 用户相关类型
+export interface UserProfile {
+  id: number;
+  username: string;
+  display_name: string;
+  email?: string;
+  created_at?: string;
+}
+
+export interface UserRegisterRequest {
+  username: string;
+  password: string;
+  email?: string;
+  display_name?: string;
+}
+
+export interface UserFavorite {
+  id: number;
+  stock_code: string;
+  market_type: string;
+  display_name?: string;
+  tags: string[];
+  created_at: string;
+}
+
+export interface FavoriteRequest {
+  stock_code: string;
+  market_type: string;
+  display_name?: string;
+  tags?: string[];
+}
+
+export interface AnalysisHistoryItem {
+  id: number;
+  stock_codes: string[];
+  market_type: string;
+  analysis_days: number;
+  analysis_result?: any;
+  created_at: string;
+}
+
+export interface UserSettings {
+  default_market_type: string;
+  default_analysis_days: number;
+  api_preferences: Record<string, any>;
+  ui_preferences: Record<string, any>;
+  updated_at?: string;
+}
+
+export interface UserSettingsRequest {
+  default_market_type?: string;
+  default_analysis_days?: number;
+  api_preferences?: Record<string, any>;
+  ui_preferences?: Record<string, any>;
 }
 
 export interface StockInfo {

@@ -18,8 +18,13 @@ services:
       - API_TIMEOUT=${API_TIMEOUT}
       - LOGIN_PASSWORD=${LOGIN_PASSWORD}
       - ANNOUNCEMENT_TEXT=${ANNOUNCEMENT_TEXT}
+      # 用户系统配置
+      - ENABLE_USER_SYSTEM=${ENABLE_USER_SYSTEM:-true}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=sqlite:///data/stock_scanner.db
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data  # 数据库持久化
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8888/api/config"]

@@ -40,6 +40,20 @@
         require-mark-placement="right-hanging"
         class="login-form"
       >
+        <!-- 用户名输入 -->
+        <n-form-item path="username">
+          <n-input
+            v-model:value="formValue.username"
+            placeholder="请输入用户名（试试: demo）"
+            size="large"
+            class="login-input"
+          >
+            <template #prefix>
+              <n-icon :component="PersonIcon" />
+            </template>
+          </n-input>
+        </n-form-item>
+        
         <n-form-item path="password">
           <n-input
             v-model:value="formValue.password"
@@ -54,6 +68,14 @@
             </template>
           </n-input>
         </n-form-item>
+        
+        <!-- 注册提示 -->
+        <div class="register-link">
+          <n-text depth="3">还没有账号？</n-text>
+          <n-button text type="primary" @click="openRegister">
+            立即注册
+          </n-button>
+        </div>
         
         <div class="login-button-container">
           <n-button
@@ -73,13 +95,15 @@
         <n-text depth="3">© {{ new Date().getFullYear() }} 股票AI分析系统</n-text>
       </div>
     </n-card>
+
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { 
+import {
   NCard, 
   NForm, 
   NFormItem, 
@@ -87,12 +111,14 @@ import {
   NButton, 
   NIcon,
   NText,
+  NSpace,
   useMessage,
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { 
   BarChartOutline as BarChartIcon, 
   LockClosedOutline as LockClosedIcon,
+  PersonOutline as PersonIcon,
 } from '@vicons/ionicons5';
 import { apiService } from '@/services/api';
 import type { LoginRequest } from '@/types';
@@ -104,12 +130,20 @@ const formRef = ref<FormInst | null>(null);
 const loading = ref(false);
 const announcement = ref('');
 const showAnnouncementBanner = ref(true);
+const showRegisterDialog = ref(false);
 
 const formValue = reactive({
+  username: '',
   password: ''
 });
 
 const rules: FormRules = {
+  username: [
+    {
+      required: true,
+      message: '请输入用户名'
+    }
+  ],
   password: [
     {
       required: true,
@@ -132,6 +166,12 @@ const handleAnnouncementClose = () => {
   showAnnouncementBanner.value = false;
 };
 
+// 系统配置
+const systemConfig = ref({
+  user_system_enabled: false,
+  old_password_auth: false
+});
+
 // 页面加载时检查是否已登录并获取系统公告
 onMounted(async () => {
   try {
@@ -140,6 +180,14 @@ onMounted(async () => {
     if (config.announcement) {
       showAnnouncement(config.announcement);
     }
+    
+    // 保存系统配置信息
+    systemConfig.value = {
+      user_system_enabled: config.user_system_enabled || false,
+      old_password_auth: config.require_login || false
+    };
+    
+    console.log('系统配置:', systemConfig.value);
     
     // 不重复检查是否需要登录，因为路由守卫已经做了这个检查
     // 直接检查是否已登录
@@ -171,6 +219,7 @@ const handleLogin = () => {
     
     try {
       const loginRequest: LoginRequest = {
+        username: formValue.username,
         password: formValue.password
       };
       
@@ -190,6 +239,13 @@ const handleLogin = () => {
       loading.value = false;
     }
   });
+};
+
+// 打开注册页面（简单处理，跳转到用户面板）
+const openRegister = () => {
+  // 简单处理：在新标签页打开注册界面
+  // 实际应用中可以有专门的注册页面
+  router.push('/?register=true');
 };
 </script>
 

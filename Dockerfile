@@ -62,6 +62,16 @@ COPY . /app/
 # 从前端构建阶段复制生成的静态文件到后端的前端目录
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
+# 创建数据目录用于SQLite数据库持久化
+RUN mkdir -p /app/data
+
+# 设置数据库环境变量
+ENV DATABASE_URL=sqlite:///data/stock_scanner.db
+
+# 复制并设置启动脚本权限
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
 # 暴露端口
 EXPOSE 8888
 
@@ -70,4 +80,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8888/api/config || exit 1
 
 # 启动命令
-CMD ["python", "web_server.py"]
+CMD ["/app/docker-entrypoint.sh"]

@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any, Generator
 from services.stock_analyzer_service import StockAnalyzerService
 from services.us_stock_service_async import USStockServiceAsync
 from services.fund_service_async import FundServiceAsync
+from services.user_service import user_service, UserRegisterRequest, UserLoginRequest, FavoriteRequest, UserSettingsRequest
 import os
 import httpx
 from utils.logger import get_logger
@@ -29,11 +30,10 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_hex(32))
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080  # Token过期时间一周
 
-LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "")
-print(LOGIN_PASSWORD)
-
-# 是否需要登录
-REQUIRE_LOGIN = bool(LOGIN_PASSWORD.strip())
+# 是否启用用户系统（统一的认证方式）
+ENABLE_USER_SYSTEM = os.getenv("ENABLE_USER_SYSTEM", "true").lower() == "true"
+# 是否允许匿名访问（不启用用户系统时）
+ALLOW_ANONYMOUS = not ENABLE_USER_SYSTEM
 
 
 app = FastAPI(
@@ -72,21 +72,22 @@ class TestAPIRequest(BaseModel):
     api_timeout: Optional[int] = 10
 
 class LoginRequest(BaseModel):
-    password: str
-
+    password: Optional[str] = None  # 兼容旧版密码登录
+    username: Optional[str] = None  # 新用户系统
+    
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-# 自定义依赖项，在REQUIRE_LOGIN=False时不要求token
+# 自定义依赖项，在允许匿名访问时不要求token
 class OptionalOAuth2PasswordBearer(OAuth2PasswordBearer):
     async def __call__(self, request: Request) -> Optional[str]:
-        if not REQUIRE_LOGIN:
+        if ALLOW_ANONYMOUS:
             return None
         try:
             return await super().__call__(request)
         except HTTPException:
-            if not REQUIRE_LOGIN:
+            if ALLOW_ANONYMOUS:
                 return None
             raise
 
@@ -104,14 +105,54 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# 验证令牌
+# 验证令牌并获取用户信息
+async def get_current_user(token: Optional[str] = Depends(optional_oauth2_scheme)):
+    """验证令牌并返回用户信息"""
+    # 如果允许匿名访问，返回匿名用户
+    if ALLOW_ANONYMOUS:
+        return {"user_id": None, "username": "guest", "is_authenticated": False}
+        
+    # 如果没有token但允许匿名访问，返回guest
+    if token is None and ALLOW_ANONYMOUS:
+        return {"user_id": None, "username": "guest", "is_authenticated": False}
+        
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="无效的认证凭据",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    # 如果需要认证但没有token，抛出异常
+    if token is None:
+        raise credentials_exception
+        
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        user_id: int = payload.get("user_id")
+        
+        if username is None:
+            raise credentials_exception
+            
+        # 如果启用了用户系统且有user_id，返回完整用户信息
+        if ENABLE_USER_SYSTEM and user_id:
+            return {"user_id": user_id, "username": username, "is_authenticated": True}
+        else:
+            # 兼容旧版认证系统
+            return {"user_id": None, "username": username, "is_authenticated": True}
+            
+    except JWTError:
+        raise credentials_exception
+
+# 验证令牌（
 async def verify_token(token: Optional[str] = Depends(optional_oauth2_scheme)):
-    # 如果未设置密码，则不需要验证
-    if not REQUIRE_LOGIN:
+    """验证令牌，返回用户名（保持与原版兼容）"""
+    # 如果允许匿名访问，返回guest
+    if ALLOW_ANONYMOUS:
         return "guest"
         
-    # 如果没有token且不需要登录，返回guest
-    if token is None and not REQUIRE_LOGIN:
+    # 如果没有token且允许匿名访问，返回guest
+    if token is None and ALLOW_ANONYMOUS:
         return "guest"
         
     credentials_exception = HTTPException(
@@ -120,7 +161,7 @@ async def verify_token(token: Optional[str] = Depends(optional_oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    # 如果需要登录但没有token，抛出异常
+    # 如果需要认证但没有token，抛出异常
     if token is None:
         raise credentials_exception
         
@@ -133,32 +174,161 @@ async def verify_token(token: Optional[str] = Depends(optional_oauth2_scheme)):
     except JWTError:
         raise credentials_exception
 
-# 用户登录接口
+# 用户注册接口
+@app.post("/api/register")
+async def register(request: UserRegisterRequest):
+    """用户注册接口"""
+    if not ENABLE_USER_SYSTEM:
+        raise HTTPException(status_code=400, detail="用户系统未启用")
+    
+    user = user_service.create_user(request)
+    if user:
+        # 创建访问令牌
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username, "user_id": user.id}, 
+            expires_delta=access_token_expires
+        )
+        logger.info(f"用户注册成功: {user.username}")
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "email": user.email
+            }
+        }
+    else:
+        raise HTTPException(status_code=400, detail="用户注册失败，用户名可能已存在")
+
+# 用户登录接口（仅用户系统）
 @app.post("/api/login")
 async def login(request: LoginRequest):
     """用户登录接口"""
-    # 如果未设置密码，表示不需要登录
-    if not REQUIRE_LOGIN:
-        access_token = create_access_token(data={"sub": "guest"})
-        return {"access_token": access_token, "token_type": "bearer"}
+    if not ENABLE_USER_SYSTEM:
+        raise HTTPException(status_code=400, detail="用户系统未启用")
         
-    if request.password != LOGIN_PASSWORD:
-        logger.warning("登录失败：密码错误")
-        raise HTTPException(status_code=401, detail="密码错误")
-    
-    # 创建访问令牌
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": "user"}, expires_delta=access_token_expires
-    )
-    logger.info("用户登录成功")
-    return {"access_token": access_token, "token_type": "bearer"}
+    if not request.username or not request.password:
+        raise HTTPException(status_code=400, detail="请提供用户名和密码")
+        
+    user = user_service.authenticate_user(request.username, request.password)
+    if user:
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username, "user_id": user.id}, 
+            expires_delta=access_token_expires
+        )
+        logger.info(f"用户登录成功: {user.username}")
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "email": user.email
+            }
+        }
+    else:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
 # 检查用户认证状态
 @app.get("/api/check_auth")
-async def check_auth(username: str = Depends(verify_token)):
+async def check_auth(current_user: dict = Depends(get_current_user)):
     """检查用户认证状态"""
-    return {"authenticated": True, "username": username}
+    return {
+        "authenticated": current_user["is_authenticated"], 
+        "username": current_user["username"],
+        "user_id": current_user.get("user_id"),
+        "user_system_enabled": ENABLE_USER_SYSTEM
+    }
+
+# 获取用户信息
+@app.get("/api/user/profile")
+async def get_user_profile(current_user: dict = Depends(get_current_user)):
+    """获取用户信息"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user = user_service.get_user_by_id(current_user["user_id"])
+    if user:
+        return {
+            "id": user.id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "email": user.email,
+            "created_at": user.created_at.isoformat()
+        }
+    else:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+# 收藏功能
+@app.post("/api/user/favorites")
+async def add_favorite(request: FavoriteRequest, current_user: dict = Depends(get_current_user)):
+    """添加收藏股票"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    success = user_service.add_favorite(current_user["user_id"], request)
+    if success:
+        return {"message": "收藏添加成功"}
+    else:
+        raise HTTPException(status_code=400, detail="添加收藏失败，可能已存在")
+
+@app.delete("/api/user/favorites/{stock_code}")
+async def remove_favorite(stock_code: str, market_type: str, current_user: dict = Depends(get_current_user)):
+    """移除收藏股票"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    success = user_service.remove_favorite(current_user["user_id"], stock_code, market_type)
+    if success:
+        return {"message": "收藏移除成功"}
+    else:
+        raise HTTPException(status_code=404, detail="收藏不存在")
+
+@app.get("/api/user/favorites")
+async def get_favorites(current_user: dict = Depends(get_current_user)):
+    """获取收藏列表"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    favorites = user_service.get_user_favorites(current_user["user_id"])
+    return {"favorites": favorites}
+
+# 历史记录功能
+@app.get("/api/user/history")
+async def get_analysis_history(limit: int = 50, current_user: dict = Depends(get_current_user)):
+    """获取分析历史"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    history = user_service.get_analysis_history(current_user["user_id"], limit)
+    return {"history": history}
+
+# 用户设置功能
+@app.put("/api/user/settings")
+async def update_settings(request: UserSettingsRequest, current_user: dict = Depends(get_current_user)):
+    """更新用户设置"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    success = user_service.update_user_settings(current_user["user_id"], request)
+    if success:
+        return {"message": "设置更新成功"}
+    else:
+        raise HTTPException(status_code=400, detail="设置更新失败")
+
+@app.get("/api/user/settings")
+async def get_settings(current_user: dict = Depends(get_current_user)):
+    """获取用户设置"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    settings = user_service.get_user_settings(current_user["user_id"])
+    return {"settings": settings or {}}
 
 # 获取系统配置
 @app.get("/api/config")
@@ -168,13 +338,14 @@ async def get_config():
         'announcement': os.getenv('ANNOUNCEMENT_TEXT') or '',
         'default_api_url': os.getenv('API_URL', ''),
         'default_api_model': os.getenv('API_MODEL', ''),
-        'default_api_timeout': os.getenv('API_TIMEOUT', '60')
+        'default_api_timeout': os.getenv('API_TIMEOUT', '60'),
+        'user_system_enabled': ENABLE_USER_SYSTEM,
+        'require_login': ENABLE_USER_SYSTEM
     }
     return config
-
 # AI分析股票
 @app.post("/api/analyze")
-async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)):
+async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_current_user)):
     try:
         logger.info("开始处理分析请求")
         stock_codes = request.stock_codes
@@ -208,6 +379,15 @@ async def analyze(request: AnalyzeRequest, username: str = Depends(verify_token)
         if not stock_codes:
             logger.warning("未提供股票代码")
             raise HTTPException(status_code=400, detail="请输入代码")
+        
+        # 保存分析历史（如果用户已登录）
+        if ENABLE_USER_SYSTEM and current_user["is_authenticated"] and current_user["user_id"]:
+            user_service.save_analysis_history(
+                current_user["user_id"], 
+                stock_codes, 
+                market_type, 
+                analysis_days
+            )
         
         # 定义流式生成器
         async def generate_stream():
@@ -401,7 +581,12 @@ async def test_api_connection(request: TestAPIRequest, username: str = Depends(v
 @app.get("/api/need_login")
 async def need_login():
     """检查是否需要登录"""
-    return {"require_login": REQUIRE_LOGIN}
+    # 是否需要认证取决于是否启用用户系统
+    return {
+        "require_login": ENABLE_USER_SYSTEM,
+        "user_system_enabled": ENABLE_USER_SYSTEM,
+        "allow_anonymous": ALLOW_ANONYMOUS
+    }
 
 # 设置静态文件
 frontend_dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'dist')
