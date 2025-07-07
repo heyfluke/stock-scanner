@@ -14,6 +14,29 @@
         <!-- 市场时间显示 -->
         <MarketTimeDisplay :is-mobile="isMobile" />
         
+        <!-- 用户面板（可折叠） -->
+        <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow">
+          <template #header>
+            <n-space align="center" justify="space-between">
+              <n-space align="center">
+                <n-icon :component="PersonIcon" />
+                <span>用户中心</span>
+              </n-space>
+              <n-button 
+                text 
+                @click="toggleUserPanel"
+                :style="{ transform: showUserPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }"
+              >
+                <n-icon :component="ChevronDownIcon" />
+              </n-button>
+            </n-space>
+          </template>
+          
+          <n-collapse-transition :show="showUserPanel">
+            <UserPanel />
+          </n-collapse-transition>
+        </n-card>
+        
         <!-- API配置面板 -->
         <ApiConfigPanel
           :default-api-url="defaultApiUrl"
@@ -209,6 +232,7 @@ import {
   NDropdown,
   NModal,
   NH2,
+  NCollapseTransition,
   type DataTableColumns
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
@@ -217,7 +241,9 @@ import {
   DownloadOutline as DownloadIcon,
   ImageOutline as ImageIcon,
   DocumentOutline as PdfIcon,
-  GridOutline as ExcelIcon
+  GridOutline as ExcelIcon,
+  PersonOutline as PersonIcon,
+  ChevronDownOutline as ChevronDownIcon
 } from '@vicons/ionicons5';
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
@@ -231,6 +257,7 @@ import ApiConfigPanel from './ApiConfigPanel.vue';
 import StockSearch from './StockSearch.vue';
 import StockCard from './StockCard.vue';
 import AnnouncementBanner from './AnnouncementBanner.vue';
+import UserPanel from './UserPanel.vue';
 
 import { apiService } from '@/services/api';
 import type { StockInfo, ApiConfig, StreamInitMessage, StreamAnalysisUpdate } from '@/types';
@@ -247,6 +274,9 @@ const defaultApiModel = ref('');
 const defaultApiTimeout = ref('60');
 const announcement = ref('');
 const showAnnouncementBanner = ref(true);
+
+// 用户面板状态
+const showUserPanel = ref(false);
 
 // 股票分析配置
 const marketType = ref('A');
@@ -286,6 +316,11 @@ const showAnnouncement = (content: string) => {
   // 使用AnnouncementBanner组件显示公告
   announcement.value = content;
   showAnnouncementBanner.value = true;
+};
+
+// 切换用户面板显示状态
+const toggleUserPanel = () => {
+  showUserPanel.value = !showUserPanel.value;
 };
 
 // 市场选项
@@ -1505,5 +1540,18 @@ function handleAnnouncementClose() {
 
 .export-container :deep(.chart-container) {
   height: 400px; /* 确保图表在导出时有固定高度 */
+}
+
+/* 用户面板样式 */
+.user-panel-card {
+  margin-bottom: 1rem;
+}
+
+.user-panel-card :deep(.n-card-header) {
+  cursor: pointer;
+}
+
+.user-panel-card :deep(.n-card-header):hover {
+  background-color: rgba(0, 0, 0, 0.02);
 }
 </style>
