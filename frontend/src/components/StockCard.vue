@@ -127,7 +127,7 @@
           <n-switch
             v-model:value="showBollinger"
             size="small"
-            @update:value="updateChart"
+            @update:value="() => updateChart(false)"
           >
             <template #checked>
               BOLL
@@ -227,8 +227,6 @@ const chartOption = ref<EChartsOption>({});
 const generateChartOption = () => {
   const chartData: any[] = props.stock.chart_data || [];
   if (chartData.length === 0) return {};
-
-  console.log(`[StockCard] Generating chart options for stock: ${props.stock.code}`);
   
   // The data is an array of objects, e.g., {date: '...', open: ..., close: ...}
   const dates = chartData.map(item => item.date);
@@ -343,7 +341,7 @@ const generateChartOption = () => {
       yAxisIndex: 1,
       data: volumes.map(item => item[1]),
       itemStyle: {
-        color: ({ dataIndex }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
+        color: ({ dataIndex }: { dataIndex: number }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
       }
     }
   ];
@@ -412,17 +410,17 @@ const generateChartOption = () => {
     ],
     xAxis: [
       {
-        type: 'category',
+        type: 'category' as const,
         data: dates,
         scale: true,
         boundaryGap: false,
         axisLine: { onZero: false },
         splitLine: { show: false },
-        min: 'dataMin',
-        max: 'dataMax'
+        min: 'dataMin' as const,
+        max: 'dataMax' as const
       },
       {
-        type: 'category',
+        type: 'category' as const,
         gridIndex: 1,
         data: dates,
         scale: true,
@@ -431,8 +429,8 @@ const generateChartOption = () => {
         axisTick: { show: false },
         splitLine: { show: false },
         axisLabel: { show: false },
-        min: 'dataMin',
-        max: 'dataMax'
+        min: 'dataMin' as const,
+        max: 'dataMax' as const
       }
     ],
     yAxis: [
@@ -454,7 +452,7 @@ const generateChartOption = () => {
     ],
     dataZoom: [
       {
-        type: 'inside',
+        type: 'inside' as const,
         xAxisIndex: [0, 1],
         start: 0,
         end: 100
@@ -462,96 +460,80 @@ const generateChartOption = () => {
       {
         show: true,
         xAxisIndex: [0, 1],
-        type: 'slider',
+        type: 'slider' as const,
         top: '85%',
         start: 0,
         end: 100
       }
     ],
-    series: [
-      {
-        name: '日K',
-        type: 'candlestick',
-        data: klineData,
-        itemStyle: {
-            color: '#ec0000',
-            color0: '#00da3c',
-            borderColor: '#8A0000',
-            borderColor0: '#008F28'
-        },
-        markPoint: {
-          label: {
-            formatter: function (param: any) {
-              return param != null ? Math.round(param.value) + '' : '';
-            }
-          },
-          data: [
-            {
-              name: 'max',
-              type: 'max',
-              valueDim: 'highest'
-            },
-            {
-              name: 'min',
-              type: 'min',
-              valueDim: 'lowest'
-            }
-          ]
-        }
-      },
-      {
-        name: 'MA5',
-        type: 'line',
-        data: ma5,
-        smooth: true,
-        lineStyle: {
-          opacity: 0.5
-        }
-      },
-      {
-        name: 'MA10',
-        type: 'line',
-        data: ma10,
-        smooth: true,
-        lineStyle: {
-          opacity: 0.5
-        }
-      },
-      {
-        name: 'MA20',
-        type: 'line',
-        data: ma20,
-        smooth: true,
-        lineStyle: {
-          opacity: 0.5
-        }
-      },
-      {
-        name: 'Volume',
-        type: 'bar',
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: volumes.map(item => item[1]),
-        itemStyle: {
-          color: ({ dataIndex }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
-        }
-      }
-    ],
     series: series
-  };
+  } as EChartsOption;
+};
+
+// 缓存上次生成的图表配置的哈希值，避免重复生成
+const lastConfigHash = ref('');
+
+// 生成简单的配置哈希来判断是否需要更新
+const getConfigHash = () => {
+  const data = props.stock.chart_data;
+  if (!data || data.length === 0) return '';
+  return `${data.length}-${showBollinger.value}`;
 };
 
 // 更新图表
-const updateChart = () => {
-  chartOption.value = generateChartOption();
+const updateChart = async (forceResize = false) => {
+  if (props.stock.chart_data && props.stock.chart_data.length > 0) {
+    const currentHash = getConfigHash();
+    
+         // 只有在配置真正改变时才重新生成图表
+     if (currentHash !== lastConfigHash.value) {
+       chartOption.value = generateChartOption();
+       lastConfigHash.value = currentHash;
+     }
+    
+    // 只在必要时调用 resize（如首次渲染或强制要求）
+    if (forceResize) {
+      await nextTick();
+      if (chartInstance.value) {
+        try {
+          chartInstance.value.resize();
+          console.log(`[StockCard] Chart resized for stock: ${props.stock.code}`);
+        } catch (error) {
+          console.warn(`[StockCard] Chart resize failed for stock: ${props.stock.code}`, error);
+        }
+      }
+    }
+  }
 };
 
-// 监听图表数据变化
+// 添加标记来跟踪是否已初始化
+const chartInitialized = ref(false);
+const lastChartDataLength = ref(0);
+
+// 监听图表数据变化 - 只在数据真正改变时更新
 watch(() => props.stock.chart_data, (newChartData) => {
   if (newChartData && newChartData.length > 0) {
-    updateChart();
+    // 只有在数据长度变化时才更新图表（避免重复渲染）
+    if (newChartData.length !== lastChartDataLength.value) {
+      const needsResize = !chartInitialized.value;
+      updateChart(needsResize);
+      chartInitialized.value = true;
+      lastChartDataLength.value = newChartData.length;
+    }
   }
-}, { deep: true, once: true });
+}, { deep: false, immediate: true }); // 改为 deep: false 避免深度监听
+
+// 添加组件挂载后的图表初始化
+onMounted(async () => {
+  // 等待DOM完全渲染
+  await nextTick();
+  
+  // 如果已经有图表数据，立即更新图表
+  if (props.stock.chart_data && props.stock.chart_data.length > 0 && !chartInitialized.value) {
+    updateChart(true); // 首次挂载时强制 resize
+    chartInitialized.value = true;
+  }
+});
 
 const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
