@@ -4,16 +4,14 @@
 
 基于 https://github.com/DR-lin-eng/stock-scanner ( lanzhihong6/stock-scanner ) 二次修改，感谢原作者  
 
-## 功能变更（ lanzhihong6/stock-scanner ）
+## 镜像版本和说明
 
-1. 增加html页面，支持浏览器在线使用  
-2. 增加港股、美股支持  
-3. 完善Dockerfile、GitHub Actions 支持docker一键部署使用  
-4. 支持x86_64 和 ARM64架构镜像  
-5. 支持流式输出，支持前端传入Key(仅作为本地用户使用，日志等内容不会输出) 感谢@Cassianvale  
-6. 重构为Vue3+Vite+TS+Naive UI，支持响应式布局  
-7. 支持GitHub Actions 一键部署  
-8. 支持Nginx反向代理，可通过80/443端口访问
+| 版本（docker tag） | 变更内容 |
+| --- | --- |
+| 0.2.0-SNAPSHOT | 增加用户系统，配置 后默认用demo/demo登陆 |
+| 0.1.2 | 增加K线/布林带；支持截图分享 |
+
+说明：-SNAPSHOT 是测试版，不会打到latest。
 
 ## Docker镜像一键部署
 
