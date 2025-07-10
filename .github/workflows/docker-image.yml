@@ -63,7 +63,7 @@ jobs:
       with:
         images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner
         tags: |
-          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch || github.ref_type == 'tag' }}
+          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch || (github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT')) }}
           type=raw,value=${{ needs.prepare.outputs.version }}
     
     - name: Build and push
@@ -90,7 +90,7 @@ jobs:
     needs: [prepare, build, check_secrets]
     runs-on: ubuntu-latest
     if: |
-      needs.check_secrets.outputs.can_deploy == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag'))
+      needs.check_secrets.outputs.can_deploy == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT')))
     
     steps:
     - name: Checkout code for prod compose file
