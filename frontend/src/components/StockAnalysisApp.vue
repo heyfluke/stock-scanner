@@ -339,34 +339,45 @@ const toggleUserPanel = () => {
 // 处理历史记录恢复
 const handleRestoreHistory = (history: any) => {
   try {
+    console.log('开始恢复历史记录:', history);
     message.info('正在恢复历史分析结果...');
     
     // 清空当前分析结果
     analyzedStocks.value = [];
     
     // 恢复股票分析结果
-    if (history.analysis_result) {
-      const restoredStocks = Object.entries(history.analysis_result).map(([code, data]: [string, any]) => ({
-        code,
-        name: data.name || '',
-        marketType: history.market_type,
-        price: data.price,
-        changePercent: data.change_percent || data.price_change,
-        marketValue: data.market_value,
-        analysis: history.ai_output || data.analysis || '',
-        analysisStatus: 'completed' as const,
-        score: data.score,
-        recommendation: data.recommendation,
-        price_change: data.price_change_value || data.price_change,
-        rsi: data.rsi,
-        ma_trend: data.ma_trend,
-        macd_signal: data.macd_signal,
-        volume_status: data.volume_status,
-        analysis_date: data.analysis_date,
-        chart_data: history.chart_data?.[code] || data.chart_data
-      }));
+    if (history.analysis_result && typeof history.analysis_result === 'object') {
+      console.log('分析结果数据:', history.analysis_result);
+      
+      const restoredStocks = Object.entries(history.analysis_result).map(([code, data]: [string, any]) => {
+        console.log(`处理股票 ${code}:`, data);
+        return {
+          code,
+          name: data.name || '',
+          marketType: history.market_type,
+          price: data.price,
+          changePercent: data.change_percent || data.price_change,
+          marketValue: data.market_value,
+          analysis: history.ai_output || data.analysis || '',
+          analysisStatus: 'completed' as const,
+          score: data.score,
+          recommendation: data.recommendation,
+          price_change: data.price_change_value || data.price_change,
+          rsi: data.rsi,
+          ma_trend: data.ma_trend,
+          macd_signal: data.macd_signal,
+          volume_status: data.volume_status,
+          analysis_date: data.analysis_date,
+          chart_data: history.chart_data?.[code] || data.chart_data
+        };
+      });
       
       analyzedStocks.value = restoredStocks;
+      console.log('恢复的股票数据:', analyzedStocks.value);
+    } else {
+      console.warn('没有有效的分析结果数据:', history.analysis_result);
+      message.warning('该历史记录没有完整的分析结果数据');
+      return;
     }
     
     // 恢复分析参数
@@ -380,6 +391,7 @@ const handleRestoreHistory = (history: any) => {
     
   } catch (error) {
     console.error('恢复历史记录失败:', error);
+    console.error('历史记录数据:', history);
     message.error('恢复历史记录失败');
   }
 };

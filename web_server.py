@@ -482,7 +482,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                             
                             # 收集AI分析输出
                             if "ai_analysis_chunk" in chunk_data:
-                                if stock_code not in collected_ai_output:
+                                if not isinstance(collected_ai_output, dict):
                                     collected_ai_output = {}
                                 if stock_code not in collected_ai_output:
                                     collected_ai_output[stock_code] = ""
@@ -507,12 +507,19 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             # 流式响应完成后，更新历史记录
             if history_id and (collected_analysis_result or collected_ai_output or collected_chart_data):
                 try:
+                    logger.info(f"准备更新历史记录，收集的数据:")
+                    logger.info(f"  - analysis_result: {len(collected_analysis_result)} 条记录")
+                    logger.info(f"  - ai_output 类型: {type(collected_ai_output)}, 内容长度: {len(str(collected_ai_output))}")
+                    logger.info(f"  - chart_data: {len(collected_chart_data)} 条记录")
+                    
                     # 准备AI输出文本
                     ai_output_text = ""
                     if isinstance(collected_ai_output, str):
                         ai_output_text = collected_ai_output
                     elif isinstance(collected_ai_output, dict):
                         ai_output_text = "\n\n".join([f"【{code}】\n{output}" for code, output in collected_ai_output.items()])
+                    
+                    logger.info(f"最终AI输出文本长度: {len(ai_output_text)}")
                     
                     # 更新历史记录
                     user_service.save_analysis_history(
@@ -527,6 +534,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                     logger.info(f"历史记录更新成功，ID: {history_id}")
                 except Exception as e:
                     logger.error(f"更新历史记录失败: {str(e)}")
+                    logger.exception(e)
         
         logger.info("成功创建流式响应生成器")
         return StreamingResponse(generate_stream(), media_type='application/json')
