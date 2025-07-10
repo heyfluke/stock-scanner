@@ -137,20 +137,55 @@
               
               <n-list v-else>
                 <n-list-item v-for="history in analysisHistory" :key="history.id">
-                  <n-thing>
+                  <n-thing class="history-item" :class="{ 'clickable': hasAnalysisData(history) }" @click="handleHistoryClick(history)">
                     <template #header>
-                      <n-space>
-                        <span>{{ history.stock_codes.join(', ') }}</span>
-                        <n-tag size="small">{{ history.market_type }}</n-tag>
+                      <n-space align="center" justify="space-between">
+                        <n-space>
+                          <span>{{ history.stock_codes.join(', ') }}</span>
+                          <n-tag size="small">{{ history.market_type }}</n-tag>
+                          <n-tag v-if="history.ai_output" size="small" type="success">
+                            <template #icon>
+                              <n-icon><CheckmarkCircleOutline /></n-icon>
+                            </template>
+                            AI分析
+                          </n-tag>
+                          <n-tag v-if="history.chart_data" size="small" type="info">
+                            <template #icon>
+                              <n-icon><BarChartOutline /></n-icon>
+                            </template>
+                            图表
+                          </n-tag>
+                        </n-space>
+                        <n-button 
+                          size="small" 
+                          type="error" 
+                          secondary 
+                          @click.stop="handleDeleteHistory(history)"
+                          :loading="deletingHistoryId === history.id"
+                        >
+                          <template #icon>
+                            <n-icon><TrashIcon /></n-icon>
+                          </template>
+                        </n-button>
                       </n-space>
                     </template>
                     <template #description>
-                      分析天数: {{ history.analysis_days }}天
+                      <n-space>
+                        <span>分析天数: {{ history.analysis_days }}天</span>
+                        <span v-if="history.analysis_result">
+                          股票数: {{ Object.keys(history.analysis_result).length }}只
+                        </span>
+                      </n-space>
                     </template>
                     <template #footer>
-                      <n-text depth="3" style="font-size: 12px;">
-                        分析时间: {{ formatDate(history.created_at) }}
-                      </n-text>
+                      <n-space align="center" justify="space-between">
+                        <n-text depth="3" style="font-size: 12px;">
+                          分析时间: {{ formatDate(history.created_at) }}
+                        </n-text>
+                        <n-text v-if="hasAnalysisData(history)" depth="2" style="font-size: 12px; color: #2080f0;">
+                          点击查看详情
+                        </n-text>
+                      </n-space>
                     </template>
                   </n-thing>
                 </n-list-item>
@@ -171,7 +206,12 @@ import {
   NTag, NSpace, NText, NEmpty, NIcon, useMessage
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
-import { LogOutOutline as LogOutIcon, TrashOutline as TrashIcon } from '@vicons/ionicons5';
+import { 
+  LogOutOutline as LogOutIcon, 
+  TrashOutline as TrashIcon,
+  CheckmarkCircleOutline,
+  BarChartOutline
+} from '@vicons/ionicons5';
 import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { 
@@ -184,6 +224,11 @@ const props = defineProps<{
   defaultTab?: 'login' | 'register'
 }>();
 
+// 定义emits
+const emit = defineEmits<{
+  'restore-history': [history: AnalysisHistoryItem];
+}>();
+
 const message = useMessage();
 const router = useRouter();
 
@@ -192,6 +237,7 @@ const isLoggedIn = ref(false);
 const userProfile = ref<UserProfile | null>(null);
 const favorites = ref<UserFavorite[]>([]);
 const analysisHistory = ref<AnalysisHistoryItem[]>([]);
+const deletingHistoryId = ref<number | null>(null);
 
 // Tab状态
 const activeTab = ref(props.defaultTab || 'login');
@@ -383,6 +429,38 @@ const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleString('zh-CN');
 };
 
+// 检查历史记录是否有分析数据
+const hasAnalysisData = (history: AnalysisHistoryItem) => {
+  return history.ai_output || history.chart_data || history.analysis_result;
+};
+
+// 处理历史记录点击事件
+const handleHistoryClick = (history: AnalysisHistoryItem) => {
+  if (!hasAnalysisData(history)) return;
+  
+  // 发出事件给父组件，重新显示历史分析结果
+  emit('restore-history', history);
+};
+
+// 删除历史记录
+const handleDeleteHistory = async (history: AnalysisHistoryItem) => {
+  try {
+    deletingHistoryId.value = history.id;
+    const response = await apiService.deleteAnalysisHistory(history.id);
+    
+    if (response.success) {
+      message.success('删除成功');
+      await loadAnalysisHistory();
+    } else {
+      message.error(response.message);
+    }
+  } catch (error: any) {
+    message.error('删除失败');
+  } finally {
+    deletingHistoryId.value = null;
+  }
+};
+
 // 初始化
 onMounted(() => {
   loadUserData();
@@ -412,5 +490,20 @@ onMounted(() => {
 .history-section {
   max-height: 400px;
   overflow-y: auto;
+}
+
+.history-item {
+  transition: all 0.2s ease;
+}
+
+.history-item.clickable {
+  cursor: pointer;
+}
+
+.history-item.clickable:hover {
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style> 

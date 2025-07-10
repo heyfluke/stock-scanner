@@ -308,6 +308,18 @@ async def get_analysis_history(limit: int = 50, current_user: dict = Depends(get
     history = user_service.get_analysis_history(current_user["user_id"], limit)
     return {"history": history}
 
+@app.delete("/api/user/history/{history_id}")
+async def delete_analysis_history(history_id: int, current_user: dict = Depends(get_current_user)):
+    """删除分析历史"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    success = user_service.delete_analysis_history(current_user["user_id"], history_id)
+    if success:
+        return {"message": "删除成功"}
+    else:
+        raise HTTPException(status_code=404, detail="历史记录不存在或无权限删除")
+
 # 用户设置功能
 @app.put("/api/user/settings")
 async def update_settings(request: UserSettingsRequest, current_user: dict = Depends(get_current_user)):
@@ -380,9 +392,10 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             logger.warning("未提供股票代码")
             raise HTTPException(status_code=400, detail="请输入代码")
         
-        # 保存分析历史（如果用户已登录）
+        # 初始化分析历史记录（如果用户已登录）
+        history_id = None
         if ENABLE_USER_SYSTEM and current_user["is_authenticated"] and current_user["user_id"]:
-            user_service.save_analysis_history(
+            history_id = user_service.save_analysis_history(
                 current_user["user_id"], 
                 stock_codes, 
                 market_type, 
@@ -391,6 +404,11 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
         
         # 定义流式生成器
         async def generate_stream():
+            # 用于收集分析数据的变量
+            collected_analysis_result = {}
+            collected_ai_output = ""
+            collected_chart_data = {}
+            
             if len(stock_codes) == 1:
                 # 单个股票分析流式处理
                 stock_code = stock_codes[0].strip()
@@ -406,7 +424,28 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                 # 使用异步生成器
                 async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days):
                     chunk_count += 1
-                    # logger.debug(f"发送数据块 {chunk_count}: {chunk}")
+                    
+                    # 解析chunk数据用于收集
+                    try:
+                        chunk_data = json.loads(chunk)
+                        
+                        # 收集基本分析结果
+                        if "stock_code" in chunk_data and "score" in chunk_data:
+                            collected_analysis_result[stock_code] = chunk_data
+                        
+                        # 收集AI分析输出
+                        if "ai_analysis_chunk" in chunk_data:
+                            collected_ai_output += chunk_data["ai_analysis_chunk"]
+                        elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                            collected_ai_output = chunk_data["analysis"]
+                        
+                        # 收集图表数据
+                        if "chart_data" in chunk_data:
+                            collected_chart_data[stock_code] = chunk_data["chart_data"]
+                            
+                    except json.JSONDecodeError:
+                        pass  # 忽略无法解析的chunk
+                    
                     yield chunk + '\n'
                 
                 logger.info(f"股票 {stock_code} 流式分析完成，共发送 {chunk_count} 个块")
@@ -430,10 +469,64 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                     analysis_days=analysis_days
                 ):
                     chunk_count += 1
+                    
+                    # 解析chunk数据用于收集
+                    try:
+                        chunk_data = json.loads(chunk)
+                        
+                        # 收集基本分析结果
+                        if "stock_code" in chunk_data:
+                            stock_code = chunk_data["stock_code"]
+                            if "score" in chunk_data:
+                                collected_analysis_result[stock_code] = chunk_data
+                            
+                            # 收集AI分析输出
+                            if "ai_analysis_chunk" in chunk_data:
+                                if stock_code not in collected_ai_output:
+                                    collected_ai_output = {}
+                                if stock_code not in collected_ai_output:
+                                    collected_ai_output[stock_code] = ""
+                                collected_ai_output[stock_code] += chunk_data["ai_analysis_chunk"]
+                            elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                                if not isinstance(collected_ai_output, dict):
+                                    collected_ai_output = {}
+                                collected_ai_output[stock_code] = chunk_data["analysis"]
+                            
+                            # 收集图表数据
+                            if "chart_data" in chunk_data:
+                                collected_chart_data[stock_code] = chunk_data["chart_data"]
+                                
+                    except json.JSONDecodeError:
+                        pass  # 忽略无法解析的chunk
+                    
                     logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
                     yield chunk + '\n'
                 
                 logger.info(f"批量流式分析完成，共发送 {chunk_count} 个块")
+            
+            # 流式响应完成后，更新历史记录
+            if history_id and (collected_analysis_result or collected_ai_output or collected_chart_data):
+                try:
+                    # 准备AI输出文本
+                    ai_output_text = ""
+                    if isinstance(collected_ai_output, str):
+                        ai_output_text = collected_ai_output
+                    elif isinstance(collected_ai_output, dict):
+                        ai_output_text = "\n\n".join([f"【{code}】\n{output}" for code, output in collected_ai_output.items()])
+                    
+                    # 更新历史记录
+                    user_service.save_analysis_history(
+                        current_user["user_id"],
+                        stock_codes,
+                        market_type,
+                        analysis_days,
+                        analysis_result=collected_analysis_result,
+                        ai_output=ai_output_text,
+                        chart_data=collected_chart_data
+                    )
+                    logger.info(f"历史记录更新成功，ID: {history_id}")
+                except Exception as e:
+                    logger.error(f"更新历史记录失败: {str(e)}")
         
         logger.info("成功创建流式响应生成器")
         return StreamingResponse(generate_stream(), media_type='application/json')

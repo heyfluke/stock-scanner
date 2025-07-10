@@ -34,7 +34,10 @@
           </template>
           
           <n-collapse-transition :show="showUserPanel || isRegisterMode">
-            <UserPanel :default-tab="route.query.register === 'true' ? 'register' : 'login'" />
+            <UserPanel 
+            :default-tab="route.query.register === 'true' ? 'register' : 'login'" 
+            @restore-history="handleRestoreHistory"
+          />
           </n-collapse-transition>
         </n-card>
         
@@ -331,6 +334,54 @@ const showAnnouncement = (content: string) => {
 // 切换用户面板显示状态
 const toggleUserPanel = () => {
   showUserPanel.value = !showUserPanel.value;
+};
+
+// 处理历史记录恢复
+const handleRestoreHistory = (history: any) => {
+  try {
+    message.info('正在恢复历史分析结果...');
+    
+    // 清空当前分析结果
+    analyzedStocks.value = [];
+    
+    // 恢复股票分析结果
+    if (history.analysis_result) {
+      const restoredStocks = Object.entries(history.analysis_result).map(([code, data]: [string, any]) => ({
+        code,
+        name: data.name || '',
+        marketType: history.market_type,
+        price: data.price,
+        changePercent: data.change_percent || data.price_change,
+        marketValue: data.market_value,
+        analysis: history.ai_output || data.analysis || '',
+        analysisStatus: 'completed' as const,
+        score: data.score,
+        recommendation: data.recommendation,
+        price_change: data.price_change_value || data.price_change,
+        rsi: data.rsi,
+        ma_trend: data.ma_trend,
+        macd_signal: data.macd_signal,
+        volume_status: data.volume_status,
+        analysis_date: data.analysis_date,
+        chart_data: history.chart_data?.[code] || data.chart_data
+      }));
+      
+      analyzedStocks.value = restoredStocks;
+    }
+    
+    // 恢复分析参数
+    marketType.value = history.market_type;
+    analysisDays.value = history.analysis_days;
+    
+    // 关闭用户面板
+    showUserPanel.value = false;
+    
+    message.success(`已恢复 ${analyzedStocks.value.length} 只股票的历史分析结果`);
+    
+  } catch (error) {
+    console.error('恢复历史记录失败:', error);
+    message.error('恢复历史记录失败');
+  }
 };
 
 // 市场选项

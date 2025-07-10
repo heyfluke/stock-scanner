@@ -59,6 +59,8 @@ export interface AnalysisHistoryItem {
   market_type: string;
   analysis_days: number;
   analysis_result?: any;
+  ai_output?: string;
+  chart_data?: any;
   created_at: string;
 }
 

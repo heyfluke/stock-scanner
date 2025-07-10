@@ -160,6 +160,18 @@ export const apiService = {
     }
   },
 
+  deleteAnalysisHistory: async (historyId: number): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await axiosInstance.delete(`/user/history/${historyId}`);
+      return { success: true, message: response.data.message };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '删除历史记录失败'
+      };
+    }
+  },
+
   // 用户设置功能
   updateUserSettings: async (settings: UserSettingsRequest): Promise<{ success: boolean; message: string }> => {
     try {

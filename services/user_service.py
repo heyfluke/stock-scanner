@@ -41,7 +41,9 @@ class AnalysisHistory(SQLModel, table=True):
     stock_codes: str = Field()  # JSON格式
     market_type: str = Field(max_length=10)
     analysis_days: int = Field(default=30)
-    analysis_result: Optional[str] = Field(default=None)  # JSON格式
+    analysis_result: Optional[str] = Field(default=None)  # JSON格式，完整的股票分析数据
+    ai_output: Optional[str] = Field(default=None)  # AI分析文本输出
+    chart_data: Optional[str] = Field(default=None)  # 图表数据，JSON格式
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserSettings(SQLModel, table=True):
@@ -263,7 +265,9 @@ class UserService:
     # 历史记录功能
     def save_analysis_history(self, user_id: int, stock_codes: List[str], 
                             market_type: str, analysis_days: int, 
-                            analysis_result: Optional[Dict[str, Any]] = None) -> bool:
+                            analysis_result: Optional[Dict[str, Any]] = None,
+                            ai_output: Optional[str] = None,
+                            chart_data: Optional[Dict[str, Any]] = None) -> Optional[int]:
         """保存分析历史"""
         try:
             with Session(self.engine) as session:
@@ -272,17 +276,20 @@ class UserService:
                     stock_codes=json.dumps(stock_codes),
                     market_type=market_type,
                     analysis_days=analysis_days,
-                    analysis_result=json.dumps(analysis_result) if analysis_result else None
+                    analysis_result=json.dumps(analysis_result) if analysis_result else None,
+                    ai_output=ai_output,
+                    chart_data=json.dumps(chart_data) if chart_data else None
                 )
                 
                 session.add(history)
                 session.commit()
-                logger.info(f"分析历史保存成功: {len(stock_codes)}只股票")
-                return True
+                session.refresh(history)
+                logger.info(f"分析历史保存成功: {len(stock_codes)}只股票, ID: {history.id}")
+                return history.id
                 
         except Exception as e:
             logger.error(f"保存分析历史失败: {str(e)}")
-            return False
+            return None
 
     def get_analysis_history(self, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """获取分析历史"""
@@ -302,6 +309,8 @@ class UserService:
                         "market_type": history.market_type,
                         "analysis_days": history.analysis_days,
                         "analysis_result": json.loads(history.analysis_result) if history.analysis_result else None,
+                        "ai_output": history.ai_output,
+                        "chart_data": json.loads(history.chart_data) if history.chart_data else None,
                         "created_at": history.created_at.isoformat()
                     })
                 return result
@@ -309,6 +318,30 @@ class UserService:
         except Exception as e:
             logger.error(f"获取分析历史失败: {str(e)}")
             return []
+
+    def delete_analysis_history(self, user_id: int, history_id: int) -> bool:
+        """删除分析历史"""
+        try:
+            with Session(self.engine) as session:
+                history = session.exec(
+                    select(AnalysisHistory).where(
+                        AnalysisHistory.id == history_id,
+                        AnalysisHistory.user_id == user_id
+                    )
+                ).first()
+                
+                if history:
+                    session.delete(history)
+                    session.commit()
+                    logger.info(f"删除分析历史成功: ID {history_id}")
+                    return True
+                else:
+                    logger.warning(f"未找到要删除的历史记录: ID {history_id}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"删除分析历史失败: {str(e)}")
+            return False
 
     # 用户设置功能
     def update_user_settings(self, user_id: int, settings_data: UserSettingsRequest) -> bool:
