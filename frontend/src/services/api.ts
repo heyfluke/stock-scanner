@@ -113,8 +113,7 @@ export const apiService = {
   // 登出
   logout: () => {
     localStorage.removeItem('token');
-    // 简化登出逻辑
-    window.location.href = '/login';
+    // 不在这里处理跳转，让调用方处理路由
   },
 
   // 收藏功能

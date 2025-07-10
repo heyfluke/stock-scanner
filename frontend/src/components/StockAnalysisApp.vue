@@ -33,7 +33,7 @@
           </template>
           
           <n-collapse-transition :show="showUserPanel">
-            <UserPanel />
+            <UserPanel :default-tab="route.query.register === 'true' ? 'register' : 'login'" />
           </n-collapse-transition>
         </n-card>
         
@@ -248,6 +248,7 @@ import {
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 import { get, set } from 'idb-keyval';
+import { useRoute, useRouter } from 'vue-router';
 import { marked } from 'marked';
 import html2canvas from 'html2canvas';
 import * as echarts from 'echarts';
@@ -267,6 +268,7 @@ import { validateMultipleStockCodes, MarketType } from '@/utils/stockValidator';
 // 使用Naive UI的组件API
 const message = useMessage();
 const { copy } = useClipboard();
+const router = useRouter();
 
 // 从环境变量获取的默认配置
 const defaultApiUrl = ref('');
@@ -277,6 +279,7 @@ const showAnnouncementBanner = ref(true);
 
 // 用户面板状态
 const showUserPanel = ref(false);
+const route = useRoute();
 
 // 股票分析配置
 const marketType = ref('A');
@@ -1168,6 +1171,20 @@ onMounted(async () => {
     
     // 从API获取配置信息
     const config = await apiService.getConfig();
+    
+    // 检查是否需要打开注册面板
+    if (route.query.register === 'true') {
+      // 安全检查：只有在用户系统启用时才允许注册访问
+      if (config.user_system_enabled) {
+        console.log('用户系统已启用，展开用户面板进行注册');
+        showUserPanel.value = true;
+      } else {
+        console.log('用户系统未启用，忽略注册参数');
+        // 重定向到登录页
+        router.push('/login');
+        return;
+      }
+    }
     
     if (config.default_api_url) {
       defaultApiUrl.value = config.default_api_url;

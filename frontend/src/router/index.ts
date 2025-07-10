@@ -57,6 +57,24 @@ router.beforeEach(async (to, from, next) => {
       // 系统需要登录，检查本地是否有token
       const token = localStorage.getItem('token');
       if (!token) {
+        // 检查是否是注册请求 - 只有在用户系统启用时才允许
+        if (to.query.register === 'true') {
+          console.log('检测到注册参数，验证用户系统是否启用...');
+          try {
+            // 再次验证用户系统是否启用
+            const config = await apiService.getConfig();
+            if (config.user_system_enabled) {
+              console.log('用户系统已启用，允许访问主页进行注册');
+              next();
+              return;
+            } else {
+              console.log('用户系统未启用，不允许注册访问');
+            }
+          } catch (error) {
+            console.error('验证用户系统状态失败:', error);
+          }
+        }
+        
         console.log('本地没有token，跳转到登录页');
         next({ name: 'Login' });
         return;

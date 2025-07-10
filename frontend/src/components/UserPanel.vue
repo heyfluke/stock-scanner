@@ -2,7 +2,7 @@
   <div class="user-panel">
     <!-- 用户未登录状态 -->
     <div v-if="!isLoggedIn" class="auth-section">
-      <n-tabs type="segment" animated>
+      <n-tabs type="segment" animated v-model:value="activeTab">
         <n-tab-pane name="login" tab="登录">
           <n-form ref="loginFormRef" :model="loginForm" :rules="loginRules">
             <n-form-item path="username" label="用户名">
@@ -172,19 +172,29 @@ import {
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { LogOutOutline as LogOutIcon, TrashOutline as TrashIcon } from '@vicons/ionicons5';
+import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { 
   UserProfile, UserRegisterRequest, LoginRequest, 
   UserFavorite, AnalysisHistoryItem 
 } from '@/types';
 
+// 定义props
+const props = defineProps<{
+  defaultTab?: 'login' | 'register'
+}>();
+
 const message = useMessage();
+const router = useRouter();
 
 // 用户状态
 const isLoggedIn = ref(false);
 const userProfile = ref<UserProfile | null>(null);
 const favorites = ref<UserFavorite[]>([]);
 const analysisHistory = ref<AnalysisHistoryItem[]>([]);
+
+// Tab状态
+const activeTab = ref(props.defaultTab || 'login');
 
 // 登录表单
 const loginFormRef = ref<FormInst | null>(null);
@@ -295,6 +305,8 @@ const handleRegister = async () => {
 // 退出登录
 const handleLogout = () => {
   apiService.logout();
+  // 使用Vue Router跳转到登录页
+  router.push('/login');
 };
 
 // 移除收藏
