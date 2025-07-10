@@ -30,7 +30,7 @@ const router = createRouter({
 
 // 全局前置守卫
 router.beforeEach(async (to, from, next) => {
-  console.log(`路由跳转: 从 ${from.path} 到 ${to.path}`);
+  console.log(`>> 路由跳转: 从 ${from.path} 到 ${to.path}`);
   
   // 如果已经在登录页面，直接通过
   if (to.path === '/login') {

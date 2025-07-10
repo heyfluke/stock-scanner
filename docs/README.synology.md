@@ -33,7 +33,6 @@ services:
       - API_URL=${API_URL}
       - API_MODEL=${API_MODEL}
       - API_TIMEOUT=${API_TIMEOUT}
-      - LOGIN_PASSWORD=${LOGIN_PASSWORD}
       - ANNOUNCEMENT_TEXT=${ANNOUNCEMENT_TEXT}
     volumes:
       - ./logs:/app/logs
@@ -54,7 +53,6 @@ API_KEY=your_api_key
 API_URL=https://api.example.com
 API_MODEL=your_model
 API_TIMEOUT=30
-LOGIN_PASSWORD=your_password
 ANNOUNCEMENT_TEXT=your_text
 ```
 

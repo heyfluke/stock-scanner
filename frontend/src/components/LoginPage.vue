@@ -41,7 +41,7 @@
         class="login-form"
       >
         <!-- 用户名输入 -->
-        <n-form-item path="username">
+        <n-form-item path="username" v-if="systemConfig.user_system_enabled">
           <n-input
             v-model:value="formValue.username"
             placeholder="请输入用户名（试试: demo）"
@@ -58,7 +58,7 @@
           <n-input
             v-model:value="formValue.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="systemConfig.user_system_enabled ? '请输入密码' : '请输入访问密码'"
             @keyup.enter="handleLogin"
             size="large"
             class="login-input"
@@ -70,7 +70,7 @@
         </n-form-item>
         
         <!-- 注册提示 -->
-        <div class="register-link">
+        <div class="register-link" v-if="systemConfig.user_system_enabled">
           <n-text depth="3">还没有账号？</n-text>
           <n-button text type="primary" @click="openRegister">
             立即注册
@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   NCard, 
@@ -168,45 +168,55 @@ const handleAnnouncementClose = () => {
 
 // 系统配置
 const systemConfig = ref({
-  user_system_enabled: false,
-  old_password_auth: false
+  user_system_enabled: false
 });
+
+watch(systemConfig, (newConfig) => {
+  console.log('systemConfig changed:', JSON.stringify(newConfig));
+}, { deep: true });
 
 // 页面加载时检查是否已登录并获取系统公告
 onMounted(async () => {
+  console.log('LoginPage.vue onMounted: 开始执行');
   try {
     // 获取系统配置
+    console.log('LoginPage.vue: 正在获取 /api/config');
     const config = await apiService.getConfig();
+    console.log('LoginPage.vue: /api/config 返回的数据:', JSON.stringify(config));
+    
     if (config.announcement) {
       showAnnouncement(config.announcement);
     }
     
     // 保存系统配置信息
     systemConfig.value = {
-      user_system_enabled: config.user_system_enabled || false,
-      old_password_auth: config.require_login || false
+      user_system_enabled: config.user_system_enabled || false
     };
     
-    console.log('系统配置:', systemConfig.value);
+    console.log('LoginPage.vue: 更新后的 systemConfig.value:', JSON.stringify(systemConfig.value));
     
     // 不重复检查是否需要登录，因为路由守卫已经做了这个检查
     // 直接检查是否已登录
     const token = localStorage.getItem('token');
     if (!token) {
+      console.log('LoginPage.vue: 未找到 token, 停留在此页面');
       return; // 没有token，停留在登录页
     }
     
     const isAuthenticated = await apiService.checkAuth();
-    console.log('登录页面认证检查结果:', isAuthenticated);
+    console.log('LoginPage.vue: 认证检查结果 (isAuthenticated):', isAuthenticated);
     
     if (isAuthenticated) {
       // 已登录，跳转到主页
-      console.log('已登录，跳转到主页');
+      console.log('LoginPage.vue: 用户已认证，将跳转到主页');
       router.push('/');
+    } else {
+      console.log('LoginPage.vue: 用户未认证，停留在登录页');
     }
   } catch (error) {
-    console.error('认证检查或获取配置失败:', error);
+    console.error('LoginPage.vue: onMounted 期间发生错误:', error);
   }
+  console.log('LoginPage.vue onMounted: 执行完毕');
 });
 
 const handleLogin = () => {

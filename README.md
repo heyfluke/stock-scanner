@@ -37,7 +37,6 @@ docker run -d \
   -e API_URL="你的API地址" \
   -e API_MODEL="你的API模型" \
   -e API_TIMEOUT="60" \
-  -e LOGIN_PASSWORD="你的登录密码" \
   -e ANNOUNCEMENT_TEXT="你的公告内容" \
   --restart unless-stopped \
   heyfluke/stock-scanner:latest
@@ -90,7 +89,6 @@ API_KEY=你的API密钥
 API_URL=你的API地址
 API_MODEL=你的API模型
 API_TIMEOUT=超时时间(默认60秒)
-LOGIN_PASSWORD=登录密码(可选)
 ANNOUNCEMENT_TEXT=公告文本
 EOL
 

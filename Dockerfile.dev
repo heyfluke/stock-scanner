@@ -1,0 +1,57 @@
+# 开发环境 Dockerfile
+# 基于生产环境Dockerfile，但优化了开发体验
+
+FROM python:3.11-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置Python环境变量
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 创建必要的目录
+RUN mkdir -p /app/data /app/logs /app/services /app/utils /app/frontend /app/tests
+
+# 首先复制依赖文件（利用Docker缓存）
+COPY requirements.txt pyproject.toml ./
+
+# 安装Python依赖
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# 安装开发工具
+RUN pip install \
+    ipython \
+    ipdb \
+    pytest \
+    pytest-asyncio \
+    black \
+    flake8 \
+    mypy
+
+# 复制应用代码（开发时会被volume覆盖）
+COPY . .
+
+# 设置权限
+RUN chmod +x /app/web_server.py
+
+# 暴露端口
+EXPOSE 8888
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8888/api/config || exit 1
+
+# 默认命令（会被docker-compose覆盖）
+CMD ["uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "8888", "--reload"] 

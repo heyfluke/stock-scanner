@@ -109,7 +109,6 @@ jobs:
         API_URL=${{ secrets.API_URL }}
         API_MODEL=${{ secrets.API_MODEL }}
         API_TIMEOUT=${{ secrets.API_TIMEOUT }}
-        LOGIN_PASSWORD=${{ secrets.LOGIN_PASSWORD }}
         ANNOUNCEMENT_TEXT=${{ secrets.ANNOUNCEMENT_TEXT }}
         EOL
     
