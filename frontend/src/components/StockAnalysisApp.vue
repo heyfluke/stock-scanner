@@ -9,20 +9,21 @@
     />
     
     <n-layout class="main-layout">
-      <n-layout-content class="main-content mobile-content-container">
+      <n-layout-content class="main-content mobile-content-container" :class="{ 'register-mode-content': isRegisterMode }">
         
         <!-- 市场时间显示 -->
-        <MarketTimeDisplay :is-mobile="isMobile" />
+        <MarketTimeDisplay :is-mobile="isMobile" v-if="!isRegisterMode" />
         
         <!-- 用户面板（可折叠） -->
-        <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow">
+        <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow" :class="{ 'register-mode': isRegisterMode }">
           <template #header>
             <n-space align="center" justify="space-between">
               <n-space align="center">
                 <n-icon :component="PersonIcon" />
-                <span>用户中心</span>
+                <span>{{ isRegisterMode ? '用户注册' : '用户中心' }}</span>
               </n-space>
               <n-button 
+                v-if="!isRegisterMode"
                 text 
                 @click="toggleUserPanel"
                 :style="{ transform: showUserPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }"
@@ -32,13 +33,14 @@
             </n-space>
           </template>
           
-          <n-collapse-transition :show="showUserPanel">
+          <n-collapse-transition :show="showUserPanel || isRegisterMode">
             <UserPanel :default-tab="route.query.register === 'true' ? 'register' : 'login'" />
           </n-collapse-transition>
         </n-card>
         
         <!-- API配置面板 -->
         <ApiConfigPanel
+          v-if="!isRegisterMode"
           :default-api-url="defaultApiUrl"
           :default-api-model="defaultApiModel"
           :default-api-timeout="defaultApiTimeout"
@@ -46,7 +48,7 @@
         />
         
         <!-- 主要内容 -->
-        <n-card class="analysis-container mobile-card mobile-card-spacing mobile-shadow">
+        <n-card class="analysis-container mobile-card mobile-card-spacing mobile-shadow" v-if="!isRegisterMode">
           
           <n-grid cols="1 xl:24" :x-gap="16" :y-gap="16" responsive="screen">
             <!-- 左侧配置区域 -->
@@ -155,7 +157,7 @@
                     <n-grid-item v-for="(stock, index) in analyzedStocks" :key="stock.code">
                       <StockCard 
                         :stock="stock" 
-                        :ref="el => { if (el) stockCardRefs[index] = el }"
+                        :ref="(el: any) => { if (el) stockCardRefs[index] = el }"
                       />
                     </n-grid-item>
                   </n-grid>
@@ -304,6 +306,11 @@ const apiConfig = ref<ApiConfig>({
 // 移动端检测
 const isMobile = computed(() => {
   return window.innerWidth <= 768;
+});
+
+// 检测是否为注册模式
+const isRegisterMode = computed(() => {
+  return route.query.register === 'true';
 });
 
 // 监听窗口大小变化
@@ -1570,5 +1577,21 @@ function handleAnnouncementClose() {
 
 .user-panel-card :deep(.n-card-header):hover {
   background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* 注册模式下用户面板的特殊样式 */
+.user-panel-card.register-mode {
+  max-width: 500px;
+  margin: 2rem auto;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* 注册模式下主内容区域居中 */
+.main-content.register-mode-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 40px);
 }
 </style>

@@ -258,6 +258,10 @@ const handleLogin = async () => {
       
       if (response.access_token) {
         message.success('登录成功');
+        // 清除URL中的register参数
+        if (router.currentRoute.value.query.register) {
+          router.replace({ path: '/', query: {} });
+        }
         await loadUserData();
       } else {
         message.error(response.message || '登录失败');
@@ -290,6 +294,10 @@ const handleRegister = async () => {
       
       if (response.access_token) {
         message.success('注册成功');
+        // 清除URL中的register参数
+        if (router.currentRoute.value.query.register) {
+          router.replace({ path: '/', query: {} });
+        }
         await loadUserData();
       } else {
         message.error(response.message || '注册失败');
