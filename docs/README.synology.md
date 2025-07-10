@@ -34,6 +34,9 @@ services:
       - API_MODEL=${API_MODEL}
       - API_TIMEOUT=${API_TIMEOUT}
       - ANNOUNCEMENT_TEXT=${ANNOUNCEMENT_TEXT}
+      - ENABLE_USER_SYSTEM=${ENABLE_USER_SYSTEM:-true}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=sqlite:///data/stock_scanner.db
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data

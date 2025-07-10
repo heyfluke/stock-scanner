@@ -12,7 +12,9 @@
 | 0.2.0-SNAPSHOT | 增加用户系统，配置 后默认用demo/demo登陆 |
 | 0.1.2 | 增加K线/布林带；支持截图分享 |
 
-说明：-SNAPSHOT 是测试版，不会打到latest。
+说明：
+1. -SNAPSHOT 是测试版，不会打到latest。
+2. 数据库默认在data/stock_scanner.db目录下，默认建议启用用户(ENABLE_USER_SYSTEM=true)。目前SNAPSHOT阶段不保证数据库平滑迁移。
 
 ## Docker镜像一键部署
 
