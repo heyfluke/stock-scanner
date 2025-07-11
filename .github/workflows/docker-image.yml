@@ -63,7 +63,7 @@ jobs:
       with:
         images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner
         tags: |
-          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch || (github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT')) }}
+          type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT') }}
           type=raw,value=${{ needs.prepare.outputs.version }}
     
     - name: Build and push
