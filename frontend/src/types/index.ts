@@ -64,6 +64,37 @@ export interface AnalysisHistoryItem {
   created_at: string;
 }
 
+export interface Conversation {
+  id: number;
+  history_id: number;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface CreateConversationRequest {
+  history_id: number;
+  title?: string;
+}
+
+export interface SendMessageRequest {
+  message: string;
+}
+
+export interface ConversationResponse {
+  content?: string;
+  status: 'streaming' | 'completed' | 'error';
+  error?: string;
+}
+
 export interface UserSettings {
   default_market_type: string;
   default_analysis_days: number;

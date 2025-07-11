@@ -41,7 +41,7 @@
       <div class="analysis-status" v-if="stock.analysisStatus !== 'completed'">
         <n-tag 
           :type="getStatusType" 
-          size="small" 
+          size="small"
           round
           :bordered="false"
         >
@@ -52,6 +52,49 @@
           </template>
           {{ getStatusText }}
         </n-tag>
+      </div>
+      
+      <!-- 操作按钮区域 - 仅在分析完成时显示 -->
+      <div class="action-buttons" v-if="stock.analysisStatus === 'completed'">
+        <n-space align="center" justify="space-between">
+          <n-space>
+            <n-button 
+              size="small" 
+              type="primary" 
+              secondary 
+              @click="handleFavorite"
+              :loading="favoriting"
+            >
+              <template #icon>
+                <n-icon><HeartOutline /></n-icon>
+              </template>
+              {{ isFavorite ? '取消收藏' : '收藏' }}
+            </n-button>
+            <n-button 
+              size="small" 
+              type="info" 
+              secondary 
+              @click="handleShare"
+              :loading="sharing"
+            >
+              <template #icon>
+                <n-icon><ShareOutline /></n-icon>
+              </template>
+              分享
+            </n-button>
+            <n-button 
+              size="small" 
+              type="success" 
+              secondary 
+              @click="handleStartConversation"
+            >
+              <template #icon>
+                <n-icon><ChatbubbleEllipsesOutline /></n-icon>
+              </template>
+              对话
+            </n-button>
+          </n-space>
+        </n-space>
       </div>
     </div>
     
@@ -181,7 +224,10 @@ import {
   HourglassOutline,
   ReloadOutline,
   CheckmarkCircleOutline,
-  SyncOutline
+  SyncOutline,
+  HeartOutline,
+  ShareOutline,
+  ChatbubbleEllipsesOutline
 } from '@vicons/ionicons5';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
@@ -214,6 +260,15 @@ use([
 const props = defineProps<{
   stock: StockInfo;
 }>();
+
+const emit = defineEmits<{
+  'start-conversation': [stock: StockInfo];
+}>();
+
+// 状态变量
+const favoriting = ref(false);
+const sharing = ref(false);
+const isFavorite = ref(false);
 
 const chartInstance = ref<any>(null);
 const showBollinger = ref(false);
@@ -891,6 +946,37 @@ const getChartDataURL = () => {
     });
   }
   return null;
+};
+
+// 处理收藏功能
+const handleFavorite = async () => {
+  try {
+    favoriting.value = true;
+    // TODO: 实现收藏功能
+    message.success('收藏功能待实现');
+  } catch (error) {
+    message.error('收藏失败');
+  } finally {
+    favoriting.value = false;
+  }
+};
+
+// 处理分享功能
+const handleShare = async () => {
+  try {
+    sharing.value = true;
+    // TODO: 实现分享功能
+    message.success('分享功能待实现');
+  } catch (error) {
+    message.error('分享失败');
+  } finally {
+    sharing.value = false;
+  }
+};
+
+// 处理开始对话
+const handleStartConversation = () => {
+  emit('start-conversation', props.stock);
 };
 
 defineExpose({

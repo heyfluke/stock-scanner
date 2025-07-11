@@ -161,6 +161,7 @@
                       <StockCard 
                         :stock="stock" 
                         :ref="(el: any) => { if (el) stockCardRefs[index] = el }"
+                        @start-conversation="handleStartConversation"
                       />
                     </n-grid-item>
                   </n-grid>
@@ -190,27 +191,43 @@
             <n-h2>分析结果</n-h2>
             <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
               <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
-                <StockCard :stock="stock" />
+                <StockCard :stock="stock" @start-conversation="handleStartConversation" />
               </n-grid-item>
             </n-grid>
           </template>
         </div>
 
-        <n-modal
-          v-model:show="showImageModal"
-          preset="card"
-          style="width: 90%; max-width: 600px;"
-          title="导出图片"
-        >
-          <p style="text-align: center;">右键点击下方图片选择"图片另存为"，或使用下载按钮。</p>
-          <img :src="exportedImageUrl" style="width: 100%; border-radius: 8px;" />
-          <template #footer>
-            <n-space justify="end">
-              <n-button type="primary" @click="downloadExportedImage">下载图片</n-button>
-            </n-space>
+        <!-- 导出图片模态框 -->
+        <n-modal v-model:show="showImageModal" :width="800" preset="card">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span>导出分析结果图片</span>
+              <n-button text @click="showImageModal = false">
+                <template #icon>
+                  <n-icon><CloseOutline /></n-icon>
+                </template>
+              </n-button>
+            </div>
           </template>
+          
+          <div style="text-align: center;">
+            <img v-if="exportedImageUrl" :src="exportedImageUrl" style="max-width: 100%; border-radius: 8px;" />
+            <div style="margin-top: 16px;">
+              <n-button type="primary" @click="downloadImage">
+                <template #icon>
+                  <n-icon><DownloadOutline /></n-icon>
+                </template>
+                下载图片
+              </n-button>
+            </div>
+          </div>
         </n-modal>
 
+        <!-- 对话对话框 -->
+        <ConversationDialog
+          v-model:show="showConversationDialog"
+          :stock-info="currentStockForConversation"
+        />
       </n-layout-content>
     </n-layout>
   </div>
@@ -248,7 +265,9 @@ import {
   DocumentOutline as PdfIcon,
   GridOutline as ExcelIcon,
   PersonOutline as PersonIcon,
-  ChevronDownOutline as ChevronDownIcon
+  ChevronDownOutline as ChevronDownIcon,
+  CloseOutline,
+  DownloadOutline
 } from '@vicons/ionicons5';
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
@@ -264,6 +283,7 @@ import StockSearch from './StockSearch.vue';
 import StockCard from './StockCard.vue';
 import AnnouncementBanner from './AnnouncementBanner.vue';
 import UserPanel from './UserPanel.vue';
+import ConversationDialog from './ConversationDialog.vue';
 
 import { apiService } from '@/services/api';
 import type { StockInfo, ApiConfig, StreamInitMessage, StreamAnalysisUpdate } from '@/types';
@@ -296,6 +316,15 @@ const displayMode = ref<'card' | 'table'>('card');
 const resultsContainerRef = ref<HTMLElement | null>(null);
 const showImageModal = ref(false);
 const exportedImageUrl = ref('');
+
+// 对话相关状态
+const showConversationDialog = ref(false);
+const currentStockForConversation = ref<StockInfo>({
+  code: '',
+  name: '',
+  marketType: 'A',
+  analysisStatus: 'waiting'
+});
 
 // API配置
 const apiConfig = ref<ApiConfig>({
@@ -1145,6 +1174,15 @@ const downloadExportedImage = () => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+// 下载图片（别名方法）
+const downloadImage = downloadExportedImage;
+
+// 处理开始对话
+const handleStartConversation = (stock: StockInfo) => {
+  currentStockForConversation.value = stock;
+  showConversationDialog.value = true;
 };
 
 const exportToCsv = () => {

@@ -3,7 +3,7 @@ import type {
   AnalyzeRequest, TestApiRequest, TestApiResponse, SearchResult, 
   LoginRequest, LoginResponse, UserRegisterRequest, UserProfile,
   UserFavorite, FavoriteRequest, AnalysisHistoryItem, 
-  UserSettings, UserSettingsRequest 
+  UserSettings, UserSettingsRequest, CreateConversationRequest, Conversation, ConversationMessage 
 } from '@/types';
 
 // API前缀
@@ -169,6 +169,88 @@ export const apiService = {
         success: false,
         message: error.response?.data?.detail || '删除历史记录失败'
       };
+    }
+  },
+
+  // 对话功能
+  createConversation: async (request: CreateConversationRequest): Promise<{ success: boolean; conversation_id?: number; message: string; status?: number }> => {
+    try {
+      const response = await axiosInstance.post('/conversations', request);
+      return { 
+        success: true, 
+        conversation_id: response.data.conversation_id,
+        message: response.data.message 
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '创建对话失败',
+        status: error.response?.status
+      };
+    }
+  },
+
+  getConversations: async (historyId?: number): Promise<Conversation[]> => {
+    try {
+      const params = historyId ? `?history_id=${historyId}` : '';
+      const response = await axiosInstance.get(`/conversations${params}`);
+      return response.data.conversations || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
+  getConversationMessages: async (conversationId: number): Promise<ConversationMessage[]> => {
+    try {
+      const response = await axiosInstance.get(`/conversations/${conversationId}/messages`);
+      return response.data.messages || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
+  sendMessage: async (conversationId: number, message: string): Promise<ReadableStream<Uint8Array> | null> => {
+    try {
+      // 构建完整的URL
+      const baseURL = window.location.origin;
+      const response = await fetch(`${baseURL}/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ message })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response.body;
+    } catch (error) {
+      console.error('发送消息失败:', error);
+      return null;
+    }
+  },
+
+  deleteConversation: async (conversationId: number): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await axiosInstance.delete(`/conversations/${conversationId}`);
+      return { success: true, message: response.data.message };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.detail || '删除对话失败'
+      };
+    }
+  },
+
+  getRandomPrompt: async (): Promise<string> => {
+    try {
+      const response = await axiosInstance.get('/conversations/prompts/random');
+      return response.data.prompt || '';
+    } catch (error) {
+      return '';
     }
   },
 

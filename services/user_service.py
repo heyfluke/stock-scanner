@@ -6,8 +6,12 @@ from typing import List, Optional, Dict, Any
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 from pydantic import BaseModel
 from utils.logger import get_logger
+from collections import defaultdict
 
 logger = get_logger()
+
+# 频率限制缓存：{user_id: [(timestamp, count), ...]}
+conversation_creation_cache = defaultdict(list)
 
 # 数据库模型定义
 class User(SQLModel, table=True):
@@ -44,6 +48,25 @@ class AnalysisHistory(SQLModel, table=True):
     analysis_result: Optional[str] = Field(default=None)  # JSON格式，完整的股票分析数据
     ai_output: Optional[str] = Field(default=None)  # AI分析文本输出
     chart_data: Optional[str] = Field(default=None)  # 图表数据，JSON格式
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Conversation(SQLModel, table=True):
+    __tablename__ = "conversations"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")
+    history_id: int = Field(foreign_key="analysis_history.id")  # 关联的分析历史
+    title: str = Field(max_length=200)  # 对话标题
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ConversationMessage(SQLModel, table=True):
+    __tablename__ = "conversation_messages"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversations.id")
+    role: str = Field(max_length=20)  # 'user' 或 'assistant'
+    content: str = Field()  # 消息内容
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserSettings(SQLModel, table=True):
@@ -99,6 +122,29 @@ class UserService:
     def _verify_password(self, password: str, hashed: str) -> bool:
         """验证密码"""
         return self._hash_password(password) == hashed
+
+    def _check_conversation_rate_limit(self, user_id: int) -> bool:
+        """检查对话创建频率限制"""
+        now = datetime.utcnow()
+        user_cache = conversation_creation_cache[user_id]
+        
+        # 清理超过1秒的记录
+        user_cache = [(ts, count) for ts, count in user_cache if (now - ts).total_seconds() < 1]
+        conversation_creation_cache[user_id] = user_cache
+        
+        # 计算1秒内的创建次数
+        total_count = sum(count for _, count in user_cache)
+        
+        # 如果1秒内创建超过3次，返回False
+        if total_count >= 3:
+            logger.warning(f"用户 {user_id} 对话创建频率过高: {total_count} 次/秒")
+            return False
+        
+        # 添加当前创建记录
+        user_cache.append((now, 1))
+        conversation_creation_cache[user_id] = user_cache
+        
+        return True
 
     def create_user(self, user_data: UserRegisterRequest) -> Optional[User]:
         """创建新用户"""
@@ -331,6 +377,12 @@ class UserService:
                 ).first()
                 
                 if history:
+                    # 先删除相关的对话
+                    deleted_conversations = self.delete_conversations_by_history(user_id, history_id)
+                    if deleted_conversations > 0:
+                        logger.info(f"删除历史记录 {history_id} 时，同时删除了 {deleted_conversations} 个相关对话")
+                    
+                    # 再删除历史记录
                     session.delete(history)
                     session.commit()
                     logger.info(f"删除分析历史成功: ID {history_id}")
@@ -342,6 +394,218 @@ class UserService:
         except Exception as e:
             logger.error(f"删除分析历史失败: {str(e)}")
             return False
+
+    # 对话功能
+    def create_conversation(self, user_id: int, history_id: int, title: str = None) -> Optional[int]:
+        """创建新对话"""
+        try:
+            # 检查频率限制
+            if not self._check_conversation_rate_limit(user_id):
+                logger.warning(f"用户 {user_id} 对话创建被频率限制阻止")
+                return None
+            
+            with Session(self.engine) as session:
+                # 验证历史记录是否存在且属于该用户
+                history = session.exec(
+                    select(AnalysisHistory).where(
+                        AnalysisHistory.id == history_id,
+                        AnalysisHistory.user_id == user_id
+                    )
+                ).first()
+                
+                if not history:
+                    logger.warning(f"未找到历史记录: user_id={user_id}, history_id={history_id}")
+                    return None
+                
+                # 如果没有提供标题，生成默认标题
+                if not title:
+                    stock_codes = json.loads(history.stock_codes)
+                    title = f"关于 {', '.join(stock_codes)} 的对话"
+                
+                conversation = Conversation(
+                    user_id=user_id,
+                    history_id=history_id,
+                    title=title
+                )
+                
+                session.add(conversation)
+                session.commit()
+                session.refresh(conversation)
+                logger.info(f"创建对话成功: ID {conversation.id}, 标题: {title}")
+                return conversation.id
+                
+        except Exception as e:
+            logger.error(f"创建对话失败: {str(e)}")
+            return None
+
+    def get_conversations(self, user_id: int, history_id: int = None) -> List[Dict[str, Any]]:
+        """获取对话列表"""
+        try:
+            with Session(self.engine) as session:
+                query = select(Conversation).where(Conversation.user_id == user_id)
+                if history_id:
+                    query = query.where(Conversation.history_id == history_id)
+                
+                conversations = session.exec(
+                    query.order_by(Conversation.updated_at.desc())
+                ).all()
+                
+                result = []
+                for conv in conversations:
+                    # 获取对话中的消息数量
+                    messages = session.exec(
+                        select(ConversationMessage).where(ConversationMessage.conversation_id == conv.id)
+                    ).all()
+                    message_count = len(messages)
+                    
+                    result.append({
+                        "id": conv.id,
+                        "history_id": conv.history_id,
+                        "title": conv.title,
+                        "message_count": message_count,
+                        "created_at": conv.created_at.isoformat(),
+                        "updated_at": conv.updated_at.isoformat()
+                    })
+                return result
+                
+        except Exception as e:
+            logger.error(f"获取对话列表失败: {str(e)}")
+            return []
+
+    def get_conversation_messages(self, user_id: int, conversation_id: int) -> List[Dict[str, Any]]:
+        """获取对话消息"""
+        try:
+            with Session(self.engine) as session:
+                # 验证对话是否属于该用户
+                conversation = session.exec(
+                    select(Conversation).where(
+                        Conversation.id == conversation_id,
+                        Conversation.user_id == user_id
+                    )
+                ).first()
+                
+                if not conversation:
+                    logger.warning(f"未找到对话: user_id={user_id}, conversation_id={conversation_id}")
+                    return []
+                
+                messages = session.exec(
+                    select(ConversationMessage).where(ConversationMessage.conversation_id == conversation_id)
+                    .order_by(ConversationMessage.created_at.asc())
+                ).all()
+                
+                result = []
+                for msg in messages:
+                    result.append({
+                        "id": msg.id,
+                        "role": msg.role,
+                        "content": msg.content,
+                        "created_at": msg.created_at.isoformat()
+                    })
+                return result
+                
+        except Exception as e:
+            logger.error(f"获取对话消息失败: {str(e)}")
+            return []
+
+    def add_conversation_message(self, user_id: int, conversation_id: int, role: str, content: str) -> bool:
+        """添加对话消息"""
+        try:
+            with Session(self.engine) as session:
+                # 验证对话是否属于该用户
+                conversation = session.exec(
+                    select(Conversation).where(
+                        Conversation.id == conversation_id,
+                        Conversation.user_id == user_id
+                    )
+                ).first()
+                
+                if not conversation:
+                    logger.warning(f"未找到对话: user_id={user_id}, conversation_id={conversation_id}")
+                    return False
+                
+                message = ConversationMessage(
+                    conversation_id=conversation_id,
+                    role=role,
+                    content=content
+                )
+                
+                session.add(message)
+                
+                # 更新对话的更新时间
+                conversation.updated_at = datetime.utcnow()
+                
+                session.commit()
+                logger.info(f"添加对话消息成功: conversation_id={conversation_id}, role={role}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"添加对话消息失败: {str(e)}")
+            return False
+
+    def delete_conversation(self, user_id: int, conversation_id: int) -> bool:
+        """删除对话"""
+        try:
+            with Session(self.engine) as session:
+                conversation = session.exec(
+                    select(Conversation).where(
+                        Conversation.id == conversation_id,
+                        Conversation.user_id == user_id
+                    )
+                ).first()
+                
+                if conversation:
+                    # 先删除对话中的所有消息
+                    messages = session.exec(
+                        select(ConversationMessage).where(ConversationMessage.conversation_id == conversation_id)
+                    ).all()
+                    for message in messages:
+                        session.delete(message)
+                    
+                    # 再删除对话
+                    session.delete(conversation)
+                    session.commit()
+                    logger.info(f"删除对话成功: ID {conversation_id}")
+                    return True
+                else:
+                    logger.warning(f"未找到要删除的对话: ID {conversation_id}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"删除对话失败: {str(e)}")
+            return False
+
+    def delete_conversations_by_history(self, user_id: int, history_id: int) -> int:
+        """删除指定历史记录的所有对话"""
+        try:
+            with Session(self.engine) as session:
+                # 获取该历史记录的所有对话
+                conversations = session.exec(
+                    select(Conversation).where(
+                        Conversation.history_id == history_id,
+                        Conversation.user_id == user_id
+                    )
+                ).all()
+                
+                deleted_count = 0
+                for conversation in conversations:
+                    # 删除对话中的所有消息
+                    messages = session.exec(
+                        select(ConversationMessage).where(ConversationMessage.conversation_id == conversation.id)
+                    ).all()
+                    for message in messages:
+                        session.delete(message)
+                    
+                    # 删除对话
+                    session.delete(conversation)
+                    deleted_count += 1
+                
+                session.commit()
+                logger.info(f"删除历史记录 {history_id} 的所有对话成功: {deleted_count} 个对话")
+                return deleted_count
+                
+        except Exception as e:
+            logger.error(f"删除历史记录对话失败: {str(e)}")
+            return 0
 
     # 用户设置功能
     def update_user_settings(self, user_id: int, settings_data: UserSettingsRequest) -> bool:

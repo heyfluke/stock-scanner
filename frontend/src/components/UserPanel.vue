@@ -156,17 +156,30 @@
                             图表
                           </n-tag>
                         </n-space>
-                        <n-button 
-                          size="small" 
-                          type="error" 
-                          secondary 
-                          @click.stop="handleDeleteHistory(history)"
-                          :loading="deletingHistoryId === history.id"
-                        >
-                          <template #icon>
-                            <n-icon><TrashIcon /></n-icon>
-                          </template>
-                        </n-button>
+                        <n-space>
+                          <n-button 
+                            size="small" 
+                            type="primary" 
+                            secondary 
+                            @click.stop="handleStartConversation(history)"
+                          >
+                            <template #icon>
+                              <n-icon><ChatbubbleEllipsesOutline /></n-icon>
+                            </template>
+                            对话
+                          </n-button>
+                          <n-button 
+                            size="small" 
+                            type="error" 
+                            secondary 
+                            @click.stop="handleDeleteHistory(history)"
+                            :loading="deletingHistoryId === history.id"
+                          >
+                            <template #icon>
+                              <n-icon><TrashIcon /></n-icon>
+                            </template>
+                          </n-button>
+                        </n-space>
                       </n-space>
                     </template>
                     <template #description>
@@ -192,10 +205,61 @@
               </n-list>
             </div>
           </n-tab-pane>
+          
+          <n-tab-pane name="conversations" tab="AI对话">
+            <div class="conversations-section">
+              <n-empty v-if="conversations.length === 0" description="暂无对话">
+                <template #extra>
+                  <n-text depth="3">在分析历史中点击"对话"按钮开始与AI交流</n-text>
+                </template>
+              </n-empty>
+              
+              <n-list v-else>
+                <n-list-item v-for="conversation in conversations" :key="conversation.id">
+                  <n-thing class="conversation-item" @click="handleOpenConversation(conversation)">
+                    <template #header>
+                      <n-space align="center" justify="space-between">
+                        <n-space>
+                          <span>{{ conversation.title }}</span>
+                          <n-tag size="small" type="info">
+                            {{ conversation.message_count }}条消息
+                          </n-tag>
+                        </n-space>
+                        <n-button 
+                          size="small" 
+                          type="error" 
+                          secondary 
+                          @click.stop="handleDeleteConversation(conversation)"
+                          :loading="deletingConversationId === conversation.id"
+                        >
+                          <template #icon>
+                            <n-icon><TrashIcon /></n-icon>
+                          </template>
+                        </n-button>
+                      </n-space>
+                    </template>
+                    <template #description>
+                      <n-text depth="3">{{ formatDate(conversation.updated_at) }}</n-text>
+                    </template>
+                  </n-thing>
+                </n-list-item>
+              </n-list>
+            </div>
+          </n-tab-pane>
         </n-tabs>
       </n-card>
     </div>
   </div>
+
+  <!-- 对话面板 -->
+  <n-modal v-model:show="showConversation" :width="600" preset="card">
+    <ConversationPanel
+      v-if="showConversation && currentConversation"
+      :conversation-id="currentConversation.id"
+      :title="currentConversation.title"
+      @close="handleCloseConversation"
+    />
+  </n-modal>
 </template>
 
 <script setup lang="ts">
@@ -210,14 +274,16 @@ import {
   LogOutOutline as LogOutIcon, 
   TrashOutline as TrashIcon,
   CheckmarkCircleOutline,
-  BarChartOutline
+  BarChartOutline,
+  ChatbubbleEllipsesOutline
 } from '@vicons/ionicons5';
 import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { 
   UserProfile, UserRegisterRequest, LoginRequest, 
-  UserFavorite, AnalysisHistoryItem 
+  UserFavorite, AnalysisHistoryItem, Conversation
 } from '@/types';
+import ConversationPanel from './ConversationPanel.vue';
 
 // 定义props
 const props = defineProps<{
@@ -238,6 +304,12 @@ const userProfile = ref<UserProfile | null>(null);
 const favorites = ref<UserFavorite[]>([]);
 const analysisHistory = ref<AnalysisHistoryItem[]>([]);
 const deletingHistoryId = ref<number | null>(null);
+
+// 对话状态
+const conversations = ref<Conversation[]>([]);
+const showConversation = ref(false);
+const currentConversation = ref<Conversation | null>(null);
+const deletingConversationId = ref<number | null>(null);
 
 // Tab状态
 const activeTab = ref(props.defaultTab || 'login');
@@ -394,10 +466,11 @@ const loadUserData = async () => {
       userProfile.value = profile;
       isLoggedIn.value = true;
       
-      // 加载收藏和历史记录
+      // 加载收藏、历史记录和对话
       await Promise.all([
         loadFavorites(),
-        loadAnalysisHistory()
+        loadAnalysisHistory(),
+        loadConversations()
       ]);
     }
   } catch (error) {
@@ -421,6 +494,15 @@ const loadAnalysisHistory = async () => {
     analysisHistory.value = await apiService.getAnalysisHistory(20);
   } catch (error) {
     console.error('加载分析历史失败:', error);
+  }
+};
+
+// 加载对话列表
+const loadConversations = async () => {
+  try {
+    conversations.value = await apiService.getConversations();
+  } catch (error) {
+    console.error('加载对话列表失败:', error);
   }
 };
 
@@ -461,6 +543,64 @@ const handleDeleteHistory = async (history: AnalysisHistoryItem) => {
   }
 };
 
+// 开始对话
+const handleStartConversation = async (history: AnalysisHistoryItem) => {
+  try {
+    const response = await apiService.createConversation({
+      history_id: history.id,
+      title: `关于 ${history.stock_codes.join(', ')} 的对话`
+    });
+    
+    if (response.success && response.conversation_id) {
+      message.success('对话创建成功');
+      await loadConversations();
+      
+      // 打开新创建的对话
+      const newConversation = conversations.value.find(c => c.id === response.conversation_id);
+      if (newConversation) {
+        handleOpenConversation(newConversation);
+      }
+    } else {
+      message.error(response.message);
+    }
+  } catch (error: any) {
+    message.error('创建对话失败');
+  }
+};
+
+// 打开对话
+const handleOpenConversation = (conversation: Conversation) => {
+  currentConversation.value = conversation;
+  showConversation.value = true;
+};
+
+// 关闭对话
+const handleCloseConversation = () => {
+  showConversation.value = false;
+  currentConversation.value = null;
+  // 重新加载对话列表以获取最新消息数量
+  loadConversations();
+};
+
+// 删除对话
+const handleDeleteConversation = async (conversation: Conversation) => {
+  try {
+    deletingConversationId.value = conversation.id;
+    const response = await apiService.deleteConversation(conversation.id);
+    
+    if (response.success) {
+      message.success('删除成功');
+      await loadConversations();
+    } else {
+      message.error(response.message);
+    }
+  } catch (error: any) {
+    message.error('删除失败');
+  } finally {
+    deletingConversationId.value = null;
+  }
+};
+
 // 初始化
 onMounted(() => {
   loadUserData();
@@ -487,7 +627,8 @@ onMounted(() => {
 }
 
 .favorites-section,
-.history-section {
+.history-section,
+.conversations-section {
   max-height: 400px;
   overflow-y: auto;
 }
@@ -501,6 +642,18 @@ onMounted(() => {
 }
 
 .history-item.clickable:hover {
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.conversation-item {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.conversation-item:hover {
   background-color: rgba(32, 128, 240, 0.05);
   border-radius: 8px;
   transform: translateY(-1px);

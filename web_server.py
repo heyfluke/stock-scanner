@@ -19,6 +19,7 @@ import json
 import secrets
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
+from services.ai_analyzer import AIAnalyzer
 
 load_dotenv()
 
@@ -319,6 +320,213 @@ async def delete_analysis_history(history_id: int, current_user: dict = Depends(
         return {"message": "删除成功"}
     else:
         raise HTTPException(status_code=404, detail="历史记录不存在或无权限删除")
+
+# 对话功能接口
+@app.post("/api/conversations")
+async def create_conversation(
+    request: dict, 
+    current_user: dict = Depends(get_current_user)
+):
+    """创建新对话"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    history_id = request.get("history_id")
+    title = request.get("title")
+    
+    if not history_id:
+        raise HTTPException(status_code=400, detail="缺少历史记录ID")
+    
+    conversation_id = user_service.create_conversation(
+        current_user["user_id"], 
+        history_id, 
+        title
+    )
+    
+    if conversation_id:
+        return {"conversation_id": conversation_id, "message": "对话创建成功"}
+    else:
+        # 检查是否是频率限制导致的失败
+        # 这里我们通过检查最近的创建记录来判断
+        # 由于频率限制检查在服务层，我们需要在API层提供更友好的错误信息
+        raise HTTPException(
+            status_code=429, 
+            detail="创建对话过于频繁，请稍后再试（限制：每秒最多3次）"
+        )
+
+@app.get("/api/conversations")
+async def get_conversations(
+    history_id: int = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取对话列表"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    conversations = user_service.get_conversations(
+        current_user["user_id"], 
+        history_id
+    )
+    return {"conversations": conversations}
+
+@app.get("/api/conversations/{conversation_id}/messages")
+async def get_conversation_messages(
+    conversation_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取对话消息"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    messages = user_service.get_conversation_messages(
+        current_user["user_id"], 
+        conversation_id
+    )
+    return {"messages": messages}
+
+@app.post("/api/conversations/{conversation_id}/messages")
+async def send_message(
+    conversation_id: int,
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """发送消息"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    message = request.get("message")
+    if not message:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+    
+    # 保存用户消息
+    success = user_service.add_conversation_message(
+        current_user["user_id"],
+        conversation_id,
+        "user",
+        message
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="保存用户消息失败")
+    
+    # 获取对话历史
+    conversation_messages = user_service.get_conversation_messages(
+        current_user["user_id"],
+        conversation_id
+    )
+    
+    # 获取对话关联的历史记录
+    conversations = user_service.get_conversations(
+        current_user["user_id"],
+        None
+    )
+    
+    target_conversation = None
+    for conv in conversations:
+        if conv["id"] == conversation_id:
+            target_conversation = conv
+            break
+    
+    if not target_conversation:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    
+    # 获取历史记录数据作为上下文
+    history_records = user_service.get_analysis_history(
+        current_user["user_id"],
+        50
+    )
+    
+    target_history = None
+    for history in history_records:
+        if history["id"] == target_conversation["history_id"]:
+            target_history = history
+            break
+    
+    if not target_history:
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+    
+    # 构建分析上下文
+    analysis_context = {
+        "stock_codes": target_history["stock_codes"],
+        "market_type": target_history["market_type"],
+        "analysis_days": target_history["analysis_days"],
+        "analysis_result": target_history["analysis_result"],
+        "ai_output": target_history["ai_output"],
+        "chart_data": target_history["chart_data"]
+    }
+    
+    # 创建AI分析器
+    ai_analyzer = AIAnalyzer()
+    
+    # 定义流式生成器
+    async def generate_conversation_stream():
+        try:
+            ai_response_content = ""
+            async for response in ai_analyzer.get_conversation_response(
+                conversation_messages,
+                analysis_context,
+                message,
+                stream=True
+            ):
+                response_data = json.loads(response)
+                
+                # 收集AI回复内容
+                if response_data.get("status") == "streaming" and "content" in response_data:
+                    ai_response_content += response_data["content"]
+                elif response_data.get("status") == "completed" and "content" in response_data:
+                    ai_response_content += response_data["content"]
+                
+                yield response + '\n'
+            
+            # 保存AI回复
+            if ai_response_content:
+                user_service.add_conversation_message(
+                    current_user["user_id"],
+                    conversation_id,
+                    "assistant",
+                    ai_response_content
+                )
+                
+        except Exception as e:
+            logger.error(f"对话流式响应失败: {str(e)}")
+            yield json.dumps({
+                "error": f"对话响应失败: {str(e)}",
+                "status": "error"
+            }) + '\n'
+    
+    return StreamingResponse(
+        generate_conversation_stream(), 
+        media_type='application/json'
+    )
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """删除对话"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    success = user_service.delete_conversation(
+        current_user["user_id"],
+        conversation_id
+    )
+    
+    if success:
+        return {"message": "删除成功"}
+    else:
+        raise HTTPException(status_code=404, detail="对话不存在或无权限删除")
+
+@app.get("/api/conversations/prompts/random")
+async def get_random_prompt(current_user: dict = Depends(get_current_user)):
+    """获取随机对话提示词"""
+    if not current_user["is_authenticated"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    ai_analyzer = AIAnalyzer()
+    prompt = ai_analyzer.get_random_conversation_prompt()
+    return {"prompt": prompt}
 
 # 用户设置功能
 @app.put("/api/user/settings")
