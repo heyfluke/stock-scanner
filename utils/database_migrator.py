@@ -21,7 +21,6 @@ class DatabaseMigrator:
     def __init__(self, database_url: str = None):
         """初始化迁移器"""
         if database_url is None:
-            import os
             database_url = os.getenv("DATABASE_URL", "sqlite:///./data/stock_scanner.db")
         
         self.database_url = database_url

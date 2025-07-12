@@ -1,6 +1,7 @@
 # 用户服务模块
 import json
 import hashlib
+import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from sqlmodel import SQLModel, Field, create_engine, Session, select
@@ -108,7 +109,6 @@ class UserService:
     def __init__(self, database_url: Optional[str] = None):
         """初始化用户服务"""
         if database_url is None:
-            import os
             database_url = os.getenv("DATABASE_URL", "sqlite:///./stock_scanner.db")
         
         self.engine = create_engine(database_url, echo=False)

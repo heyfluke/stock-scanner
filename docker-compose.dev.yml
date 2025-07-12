@@ -1,8 +1,6 @@
 # 开发环境 Docker Compose 配置
 # 支持代码目录挂载，无需重新构建镜像即可调试
 
-version: '3.8'
-
 services:
   app-dev:
     platform: linux/amd64
