@@ -8,14 +8,46 @@
 
 | 版本（docker tag） | 变更内容 |
 | --- | --- |
-| 0.2.2-SNAPSHOT | 加上AI对话。注意这个阶段数据不保证能迁移 |
+| 0.2.4 | 加上数据库迁移。 |
+| 0.2.2-SNAPSHOT | 加上AI对话。 |
 | 0.2.1-SNAPSHOT | 记录分析历史，可直接从历史中恢复分析结果 |
 | 0.2.0-SNAPSHOT | 增加用户系统，配置 后默认用demo/demo登陆 |
 | 0.1.2 | 增加K线/布林带；支持截图分享 |
 
 说明：
 1. -SNAPSHOT 是测试版，不会打到latest。
-2. 数据库默认在data/stock_scanner.db目录下，默认建议启用用户(ENABLE_USER_SYSTEM=true)。目前SNAPSHOT阶段不保证数据库平滑迁移。
+2. 数据库默认在data/stock_scanner.db目录下，默认建议启用用户(ENABLE_USER_SYSTEM=true)。
+3. 系统支持自动数据库迁移，当仍然需要用户升级前**自行备份数据**。
+
+## 数据库迁移
+
+系统支持自动数据库迁移，尽量确保升级时数据安全：
+
+### 自动迁移
+- 应用启动时自动检查并运行迁移
+- 自动备份数据库到 `.backup.YYYYMMDD_HHMMSS` 文件
+- 支持版本控制和迁移历史记录
+
+### 手动迁移
+```bash
+# 查看迁移状态
+python manage_migrations.py status
+
+# 运行迁移到最新版本
+python manage_migrations.py migrate --latest
+
+# 运行迁移到指定版本
+python manage_migrations.py migrate --version 3
+
+# 不备份数据库运行迁移
+python manage_migrations.py migrate --latest --no-backup
+```
+
+### 迁移历史
+- v1: 初始数据库结构 (用户、收藏、分析历史)
+- v2: 添加对话功能表
+- v3: 添加用户设置表  
+- v4: 为分析历史添加AI输出和图表数据字段
 
 ## Docker镜像一键部署
 

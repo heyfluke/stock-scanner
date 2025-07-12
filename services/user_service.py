@@ -112,7 +112,15 @@ class UserService:
             database_url = os.getenv("DATABASE_URL", "sqlite:///./stock_scanner.db")
         
         self.engine = create_engine(database_url, echo=False)
-        SQLModel.metadata.create_all(self.engine)
+        
+        # 注意：数据库迁移应该在应用启动时进行，而不是在服务初始化时
+        # 这里只是确保表存在（作为备用方案）
+        try:
+            SQLModel.metadata.create_all(self.engine)
+        except Exception as e:
+            logger.error(f"创建数据库表失败: {e}")
+            raise
+        
         logger.info(f"用户服务初始化完成 - 数据库: {database_url}")
 
     def _hash_password(self, password: str) -> str:

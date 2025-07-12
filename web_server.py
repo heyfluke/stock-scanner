@@ -21,6 +21,9 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from services.ai_analyzer import AIAnalyzer
 
+# 添加数据库迁移导入
+from utils.database_migrator import DatabaseMigrator
+
 load_dotenv()
 
 # 获取日志器
@@ -55,6 +58,14 @@ app.add_middleware(
 # 初始化异步服务
 us_stock_service = USStockServiceAsync()
 fund_service = FundServiceAsync()
+
+# 在应用启动时添加数据库迁移检查
+@app.on_event("startup")
+async def startup_event():
+    logger.info("应用启动，检查数据库迁移")
+    migrator = DatabaseMigrator()
+    await migrator.check_and_apply_migrations()
+    logger.info("数据库迁移检查完成")
 
 # 定义请求和响应模型
 class AnalyzeRequest(BaseModel):

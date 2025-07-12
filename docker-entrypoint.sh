@@ -20,4 +20,20 @@ echo "Starting Stock Scanner Application..."
 echo "Database URL: $DATABASE_URL"
 echo "User System Enabled: $ENABLE_USER_SYSTEM"
 
+# 运行数据库迁移
+echo "Running database migration..."
+python -c "
+from utils.database_migrator import run_migration
+import os
+success = run_migration(
+    database_url=os.getenv('DATABASE_URL'),
+    backup=True
+)
+if not success:
+    print('Database migration failed!')
+    exit(1)
+print('Database migration completed successfully!')
+"
+
+# 启动应用
 exec python web_server.py 
