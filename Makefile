@@ -1,168 +1,178 @@
-# Stock Scanner Development Makefile
-# 提供统一的开发命令接口
+# Stock Scanner Makefile
+# 支持单体容器和微服务架构的构建和部署
 
-.PHONY: help dev-start dev-stop dev-restart dev-logs dev-shell dev-status dev-clean
-.PHONY: docker-dev docker-dev-simple docker-dev-stop docker-dev-logs docker-dev-shell
-.PHONY: build test format lint install
-.DEFAULT_GOAL := help
+.PHONY: help build build-all test test-all clean deploy deploy-monolithic deploy-microservices
 
-# 颜色定义
-GREEN := \033[32m
-YELLOW := \033[33m
-RED := \033[31m
-RESET := \033[0m
-
-## 显示帮助信息
+# 默认目标
 help:
-	@echo "$(GREEN)Stock Scanner Development Commands$(RESET)"
+	@echo "Stock Scanner 构建和部署工具"
 	@echo ""
-	@echo "$(YELLOW)本地开发:$(RESET)"
-	@echo "  make dev-start      - 启动本地开发服务器"
-	@echo "  make dev-stop       - 停止本地开发服务器"
-	@echo "  make dev-test       - 运行测试"
-	@echo ""
-	@echo "$(YELLOW)Docker开发:$(RESET)"
-	@echo "  make docker-dev     - 启动Docker开发环境（简单模式）"
-	@echo "  make docker-dev-compose - 启动Docker开发环境（完整模式）"
-	@echo "  make docker-dev-stop - 停止Docker开发环境"
-	@echo "  make docker-dev-logs - 查看Docker开发环境日志"
-	@echo "  make docker-dev-shell - 进入Docker开发环境Shell"
-	@echo "  make docker-dev-status - 查看Docker开发环境状态"
-	@echo ""
-	@echo "$(YELLOW)代码质量:$(RESET)"
-	@echo "  make format         - 格式化代码"
-	@echo "  make lint           - 代码检查"
-	@echo "  make test           - 运行测试"
-	@echo ""
-	@echo "$(YELLOW)环境管理:$(RESET)"
-	@echo "  make install        - 安装依赖"
-	@echo "  make clean          - 清理环境"
-	@echo "  make build          - 构建Docker镜像"
-	@echo ""
-	@echo "$(YELLOW)快速命令:$(RESET)"
-	@echo "  make setup          - 初始化开发环境"
-	@echo "  make dev            - 启动开发环境（自动选择模式）"
+	@echo "可用命令:"
+	@echo "  build              - 构建单体容器镜像"
+	@echo "  build-frontend     - 构建前端容器镜像"
+	@echo "  build-backend      - 构建后端容器镜像"
+	@echo "  build-all          - 构建所有镜像"
+	@echo "  test               - 测试Docker Compose配置"
+	@echo "  test-monolithic    - 测试单体容器配置"
+	@echo "  test-microservices - 测试微服务配置"
+	@echo "  clean              - 清理构建产物"
+	@echo "  deploy-monolithic  - 部署单体容器版本"
+	@echo "  deploy-microservices - 部署微服务版本"
+	@echo "  logs               - 查看服务日志"
+	@echo "  stop               - 停止所有服务"
 
-## 本地开发命令
-dev-start:
-	@echo "$(GREEN)启动本地开发服务器...$(RESET)"
-	@if [ -f "run_backend_dev.sh" ]; then \
-		./run_backend_dev.sh; \
-	else \
-		echo "$(RED)run_backend_dev.sh not found$(RESET)"; \
-	fi
-
-dev-stop:
-	@echo "$(GREEN)停止本地开发服务器...$(RESET)"
-	@pkill -f "uvicorn web_server:app" || echo "No local server running"
-
-dev-test:
-	@echo "$(GREEN)运行开发环境测试...$(RESET)"
-	@if [ -f "test_dev_setup.py" ]; then \
-		python3 test_dev_setup.py; \
-	else \
-		echo "$(RED)test_dev_setup.py not found$(RESET)"; \
-	fi
-
-## Docker开发命令
-docker-dev:
-	@echo "$(GREEN)启动Docker开发环境（简单模式）...$(RESET)"
-	@./run_docker_dev_simple.sh
-
-docker-dev-compose:
-	@echo "$(GREEN)启动Docker开发环境（完整模式）...$(RESET)"
-	@./run_docker_dev.sh
-
-docker-dev-stop:
-	@echo "$(GREEN)停止Docker开发环境...$(RESET)"
-	@./dev_tools.sh stop
-
-docker-dev-logs:
-	@echo "$(GREEN)查看Docker开发环境日志...$(RESET)"
-	@./dev_tools.sh logs -f
-
-docker-dev-shell:
-	@echo "$(GREEN)进入Docker开发环境Shell...$(RESET)"
-	@./dev_tools.sh shell
-
-docker-dev-status:
-	@echo "$(GREEN)查看Docker开发环境状态...$(RESET)"
-	@./dev_tools.sh status
-
-## 代码质量命令
-format:
-	@echo "$(GREEN)格式化代码...$(RESET)"
-	@if docker ps --format "table {{.Names}}" | grep -q "stock-scanner-dev"; then \
-		./dev_tools.sh format; \
-	else \
-		echo "$(YELLOW)Docker环境未运行，使用本地格式化...$(RESET)"; \
-		black services/ utils/ web_server.py; \
-	fi
-
-lint:
-	@echo "$(GREEN)代码检查...$(RESET)"
-	@if docker ps --format "table {{.Names}}" | grep -q "stock-scanner-dev"; then \
-		./dev_tools.sh lint; \
-	else \
-		echo "$(YELLOW)Docker环境未运行，使用本地检查...$(RESET)"; \
-		flake8 services/ utils/ web_server.py; \
-	fi
-
-test:
-	@echo "$(GREEN)运行测试...$(RESET)"
-	@if docker ps --format "table {{.Names}}" | grep -q "stock-scanner-dev"; then \
-		./dev_tools.sh test; \
-	else \
-		echo "$(YELLOW)Docker环境未运行，使用本地测试...$(RESET)"; \
-		python -m pytest tests/ -v; \
-	fi
-
-## 环境管理命令
-install:
-	@echo "$(GREEN)安装依赖...$(RESET)"
-	@pip install -r requirements.txt
-
-clean:
-	@echo "$(GREEN)清理环境...$(RESET)"
-	@./dev_tools.sh clean
-	@echo "$(GREEN)清理Python缓存...$(RESET)"
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -name "*.pyc" -delete 2>/dev/null || true
-
+# 构建单体容器镜像
 build:
-	@echo "$(GREEN)构建Docker镜像...$(RESET)"
-	@docker build -f Dockerfile.dev -t stock-scanner-dev .
+	@echo "🔨 构建单体容器镜像..."
+	docker build -t heyfluke/stock-scanner:latest .
+	@echo "✅ 单体容器镜像构建完成"
 
-## 快速命令
-setup:
-	@echo "$(GREEN)初始化开发环境...$(RESET)"
-	@mkdir -p data logs
-	@if [ ! -f ".env" ]; then \
-		echo "$(YELLOW)请手动创建 .env 文件...$(RESET)"; \
-		echo "参考 docker-compose.yml 或项目文档创建配置文件"; \
+# 构建前端容器镜像
+build-frontend:
+	@echo "🔨 构建前端容器镜像..."
+	docker build -t heyfluke/stock-scanner-frontend:latest ./frontend
+	@echo "✅ 前端容器镜像构建完成"
+
+# 构建后端容器镜像
+build-backend:
+	@echo "🔨 构建后端容器镜像..."
+	docker build -f Dockerfile.backend -t heyfluke/stock-scanner-backend:latest .
+	@echo "✅ 后端容器镜像构建完成"
+
+# 构建所有镜像
+build-all: build build-frontend build-backend
+	@echo "🎉 所有镜像构建完成"
+
+# 测试Docker Compose配置
+test:
+	@echo "🧪 测试Docker Compose配置..."
+	python tests/test-docker-compose.py
+
+# 测试单体容器配置
+test-monolithic:
+	@echo "🧪 测试单体容器配置..."
+	docker-compose -f docker-compose.yml config
+
+# 测试微服务配置
+test-microservices:
+	@echo "🧪 测试微服务配置..."
+	docker-compose -f docker-compose.microservices.yml config
+
+# 清理构建产物
+clean:
+	@echo "🧹 清理构建产物..."
+	docker system prune -f
+	docker volume prune -f
+	@echo "✅ 清理完成"
+
+# 部署单体容器版本
+deploy-monolithic:
+	@echo "🚀 部署单体容器版本..."
+	docker-compose -f docker-compose.yml up -d
+	@echo "✅ 单体容器版本部署完成"
+
+# 部署微服务版本
+deploy-microservices:
+	@echo "🚀 部署微服务版本..."
+	docker-compose -f docker-compose.microservices.yml up -d
+	@echo "✅ 微服务版本部署完成"
+
+# 查看服务日志
+logs:
+	@echo "📋 查看服务日志..."
+	docker-compose logs -f
+
+# 查看单体容器日志
+logs-monolithic:
+	@echo "📋 查看单体容器日志..."
+	docker-compose -f docker-compose.yml logs -f
+
+# 查看微服务日志
+logs-microservices:
+	@echo "📋 查看微服务日志..."
+	docker-compose -f docker-compose.microservices.yml logs -f
+
+# 停止所有服务
+stop:
+	@echo "🛑 停止所有服务..."
+	docker-compose -f docker-compose.yml down
+	docker-compose -f docker-compose.microservices.yml down
+	@echo "✅ 所有服务已停止"
+
+# 重启服务
+restart:
+	@echo "🔄 重启服务..."
+	$(MAKE) stop
+	$(MAKE) deploy-monolithic
+
+# 重启微服务
+restart-microservices:
+	@echo "🔄 重启微服务..."
+	docker-compose -f docker-compose.microservices.yml down
+	docker-compose -f docker-compose.microservices.yml up -d
+
+# 检查服务状态
+status:
+	@echo "📊 检查服务状态..."
+	docker-compose -f docker-compose.yml ps
+	@echo ""
+	docker-compose -f docker-compose.microservices.yml ps
+
+# 备份数据
+backup:
+	@echo "💾 备份数据..."
+	mkdir -p backups
+	tar -czf backups/stock-scanner-$(shell date +%Y%m%d-%H%M%S).tar.gz data/ logs/
+	@echo "✅ 数据备份完成"
+
+# 恢复数据
+restore:
+	@echo "📥 恢复数据..."
+	@if [ -z "$(BACKUP_FILE)" ]; then \
+		echo "❌ 请指定备份文件: make restore BACKUP_FILE=backups/xxx.tar.gz"; \
+		exit 1; \
 	fi
-	@echo "$(GREEN)环境初始化完成！$(RESET)"
-	@echo "$(YELLOW)请编辑 .env 文件设置API密钥$(RESET)"
+	tar -xzf $(BACKUP_FILE) -C ./
+	@echo "✅ 数据恢复完成"
 
+# 开发环境
 dev:
-	@echo "$(GREEN)启动开发环境...$(RESET)"
-	@if command -v docker >/dev/null 2>&1; then \
-		echo "$(YELLOW)检测到Docker，使用Docker开发环境$(RESET)"; \
-		make docker-dev; \
-	else \
-		echo "$(YELLOW)未检测到Docker，使用本地开发环境$(RESET)"; \
-		make dev-start; \
-	fi
+	@echo "🔧 启动开发环境..."
+	./run_docker_dev.sh
 
-## 生产环境命令
-prod-start:
-	@echo "$(GREEN)启动生产环境...$(RESET)"
-	@docker-compose up -d
+# 开发环境（简化版）
+dev-simple:
+	@echo "🔧 启动简化开发环境..."
+	./run_docker_dev_simple.sh
 
-prod-stop:
-	@echo "$(GREEN)停止生产环境...$(RESET)"
-	@docker-compose down
+# 推送镜像到Docker Hub
+push:
+	@echo "📤 推送镜像到Docker Hub..."
+	docker push heyfluke/stock-scanner:latest
+	docker push heyfluke/stock-scanner-frontend:latest
+	docker push heyfluke/stock-scanner-backend:latest
+	@echo "✅ 镜像推送完成"
 
-prod-logs:
-	@echo "$(GREEN)查看生产环境日志...$(RESET)"
-	@docker-compose logs -f 
+# 拉取最新镜像
+pull:
+	@echo "📥 拉取最新镜像..."
+	docker pull heyfluke/stock-scanner:latest
+	docker pull heyfluke/stock-scanner-frontend:latest
+	docker pull heyfluke/stock-scanner-backend:latest
+	@echo "✅ 镜像拉取完成"
+
+# 健康检查
+health:
+	@echo "🏥 执行健康检查..."
+	@curl -f http://localhost:8888/api/config || echo "❌ 单体容器服务不可用"
+	@curl -f http://localhost:80/health || echo "❌ 微服务不可用"
+	@echo "✅ 健康检查完成"
+
+# 性能测试
+benchmark:
+	@echo "⚡ 执行性能测试..."
+	@echo "测试单体容器性能..."
+	@ab -n 100 -c 10 http://localhost:8888/api/config || echo "❌ 单体容器性能测试失败"
+	@echo "测试微服务性能..."
+	@ab -n 100 -c 10 http://localhost:80/health || echo "❌ 微服务性能测试失败"
+	@echo "✅ 性能测试完成" 

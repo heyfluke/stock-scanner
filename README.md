@@ -2,7 +2,9 @@
 
 ## 简介
 
-基于 https://github.com/DR-lin-eng/stock-scanner ( lanzhihong6/stock-scanner ) 二次修改，感谢原作者  
+基于 https://github.com/DR-lin-eng/stock-scanner ( lanzhihong6/stock-scanner ) 二次修改，感谢原作者
+
+> 📖 **详细部署指南**: 如需了解多种部署方案（单容器、微服务、开发环境等），请参考 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)  
 
 ## 镜像版本和说明
 

@@ -1,0 +1,54 @@
+# 后端容器 Dockerfile
+# 仅包含Python FastAPI后端服务
+
+FROM python:3.10-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    ca-certificates \
+    build-essential \
+    curl \
+    libpq-dev \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖文件
+COPY requirements.txt ./
+
+# 安装Python依赖
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# 确保脚本路径在PATH中
+ENV PATH=/root/.local/bin:$PATH
+
+# 设置环境变量
+ENV PYTHONPATH=/app
+
+# 复制应用代码
+COPY services/ ./services/
+COPY utils/ ./utils/
+COPY web_server.py ./
+
+# 创建数据目录
+RUN mkdir -p /app/data /app/logs
+
+# 设置数据库环境变量（微服务模式使用PostgreSQL）
+ENV DATABASE_URL=postgresql://stock_user:stock_password@postgres:5432/stock_scanner
+
+# 复制启动脚本
+COPY docker-entrypoint.sh ./
+RUN chmod +x ./docker-entrypoint.sh
+
+# 暴露端口
+EXPOSE 8888
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8888/api/config || exit 1
+
+# 启动命令
+CMD ["./docker-entrypoint.sh"] 

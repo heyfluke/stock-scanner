@@ -1,0 +1,349 @@
+name: Multi-Container Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'main'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: '是否部署'
+        type: boolean
+        default: false
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_tag_latest: ${{ steps.version.outputs.should_tag_latest }}
+    steps:
+      - name: Generate version
+        id: version
+        run: |
+          # Check if the trigger was a tag push
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # Extract version from git tag (e.g., v1.2.3 -> 1.2.3)
+            VERSION=${{ github.ref_name }}
+            echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+            # Only tag latest for version tags (not SNAPSHOT)
+            if [[ ! "$VERSION" == *"-SNAPSHOT" ]]; then
+              echo "should_tag_latest=true" >> $GITHUB_OUTPUT
+            else
+              echo "should_tag_latest=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Fallback to timestamp for manual runs
+            echo "version=$(date +'%Y%m%d%H%M%S')-${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "should_tag_latest=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-monolithic:
+    needs: prepare
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Generate metadata for monolithic
+      id: meta-monolithic
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner
+        tags: |
+          type=raw,value=latest,enable=${{ needs.prepare.outputs.should_tag_latest }}
+          type=raw,value=${{ needs.prepare.outputs.version }}
+    
+    - name: Build and push monolithic
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-monolithic.outputs.tags }}
+        labels: ${{ steps.meta-monolithic.outputs.labels }}
+        cache-from: type=gha,scope=stock-scanner-monolithic
+        cache-to: type=gha,scope=stock-scanner-monolithic,mode=max
+
+  build-frontend:
+    needs: prepare
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Generate metadata for frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner-frontend
+        tags: |
+          type=raw,value=latest,enable=${{ needs.prepare.outputs.should_tag_latest }}
+          type=raw,value=${{ needs.prepare.outputs.version }}
+    
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha,scope=stock-scanner-frontend
+        cache-to: type=gha,scope=stock-scanner-frontend,mode=max
+
+  build-backend:
+    needs: prepare
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Generate metadata for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner-backend
+        tags: |
+          type=raw,value=latest,enable=${{ needs.prepare.outputs.should_tag_latest }}
+          type=raw,value=${{ needs.prepare.outputs.version }}
+    
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.backend
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        cache-from: type=gha,scope=stock-scanner-backend
+        cache-to: type=gha,scope=stock-scanner-backend,mode=max
+
+  test-configurations:
+    needs: [prepare, build-monolithic, build-frontend, build-backend]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install pyyaml
+    
+    - name: Test Docker Compose configurations
+      run: |
+        python tests/test-docker-compose.py
+
+  check_secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      can_deploy: ${{ steps.check.outputs.can_deploy }}
+    steps:
+      - name: Check for deploy secrets
+        id: check
+        run: echo "can_deploy=${{ secrets.SERVER_HOST != '' }}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: [prepare, build-monolithic, build-frontend, build-backend, test-configurations, check_secrets]
+    runs-on: ubuntu-latest
+    if: |
+      needs.check_secrets.outputs.can_deploy == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT')))
+    
+    steps:
+    - name: Checkout code for deployment
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          docker-compose.yml
+          docker-compose.microservices.yml
+          nginx/
+          init-scripts/
+    
+    - name: Create .env file for deployment
+      run: |
+        cat > .env << EOL
+        DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+        TAG=${{ needs.prepare.outputs.version }}
+        API_KEY=${{ secrets.API_KEY }}
+        API_URL=${{ secrets.API_URL }}
+        API_MODEL=${{ secrets.API_MODEL }}
+        API_TIMEOUT=${{ secrets.API_TIMEOUT }}
+        ANNOUNCEMENT_TEXT=${{ secrets.ANNOUNCEMENT_TEXT }}
+        ENABLE_USER_SYSTEM=${{ secrets.ENABLE_USER_SYSTEM }}
+        JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
+        POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+        POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+        EOL
+    
+    - name: Setup SSL certificates
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script_stop: true
+        envs: DEPLOY_PATH
+        script: |
+          # 创建备份目录（如果不存在）
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/backups
+          
+          # 如果存在旧容器，备份当前的配置和数据
+          if [ -f ${{ secrets.DEPLOY_PATH }}/docker-compose.yml ]; then
+            cp ${{ secrets.DEPLOY_PATH }}/docker-compose.yml ${{ secrets.DEPLOY_PATH }}/backups/docker-compose.$(date +%Y%m%d%H%M%S).yml
+            if [ -f ${{ secrets.DEPLOY_PATH }}/.env ]; then
+              cp ${{ secrets.DEPLOY_PATH }}/.env ${{ secrets.DEPLOY_PATH }}/backups/.env.$(date +%Y%m%d%H%M%S)
+            fi
+          fi
+          
+          # 创建nginx目录和日志目录（如果不存在）
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx/logs
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/nginx/ssl
+          mkdir -p ${{ secrets.DEPLOY_PATH }}/init-scripts
+          
+          # 如果SSL证书不存在，创建自签名证书（仅用于测试）
+          if [ ! -f ${{ secrets.DEPLOY_PATH }}/nginx/ssl/fullchain.pem ] || [ ! -f ${{ secrets.DEPLOY_PATH }}/nginx/ssl/privkey.pem ]; then
+            echo "SSL证书不存在，创建自签名证书..."
+            openssl req -x509 -nodes -days 365 \
+              -newkey rsa:2048 \
+              -keyout ${{ secrets.DEPLOY_PATH }}/nginx/ssl/privkey.pem \
+              -out ${{ secrets.DEPLOY_PATH }}/nginx/ssl/fullchain.pem \
+              -subj "/CN=localhost" \
+              -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+            echo "自签名证书创建完成"
+          fi
+    
+    - name: Copy files to server
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "docker-compose.yml,docker-compose.microservices.yml,.env,nginx/,init-scripts/"
+        target: ${{ secrets.DEPLOY_PATH }}
+        overwrite: true
+    
+    - name: Deploy services
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script_stop: true
+        script: |
+          cd ${{ secrets.DEPLOY_PATH }}
+          
+          # 停止现有服务
+          echo "停止现有服务..."
+          docker-compose -f docker-compose.yml down 2>/dev/null || true
+          docker-compose -f docker-compose.microservices.yml down 2>/dev/null || true
+          
+          # 拉取最新镜像
+          echo "拉取最新镜像..."
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner:${{ needs.prepare.outputs.version }}
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner-frontend:${{ needs.prepare.outputs.version }}
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/stock-scanner-backend:${{ needs.prepare.outputs.version }}
+          
+          # 启动服务（根据配置选择部署方式）
+          if [ "${{ secrets.DEPLOY_TYPE }}" = "microservices" ]; then
+            echo "部署微服务版本..."
+            docker-compose -f docker-compose.microservices.yml up -d
+          else
+            echo "部署单体容器版本..."
+            docker-compose -f docker-compose.yml up -d
+          fi
+          
+          # 等待服务启动完成
+          echo "等待服务启动..."
+          sleep 15
+          
+          # 验证服务是否正常运行
+          if ! curl -s -k https://localhost:443 > /dev/null && ! curl -s http://localhost:80 > /dev/null; then
+            echo "服务未正常运行！"
+            exit 1
+          fi
+          
+          # 清理未使用的镜像和容器
+          docker system prune -af --volumes
+          
+          echo "部署完成并验证成功！"
+  
+  notify:
+    needs: [prepare, build-monolithic, build-frontend, build-backend, test-configurations, deploy, check_secrets]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            Stock Scanner 多容器构建部署 ${{ job.status }}
+            - 版本: ${{ needs.prepare.outputs.version }}
+            - 单体容器: ${{ needs.build-monolithic.result }}
+            - 前端容器: ${{ needs.build-frontend.result }}
+            - 后端容器: ${{ needs.build-backend.result }}
+            - 配置测试: ${{ needs.test-configurations.result }}
+            - 部署: ${{ needs.deploy.result }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }} 
