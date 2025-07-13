@@ -5,10 +5,10 @@ FROM node:18-alpine as frontend-builder
 WORKDIR /app/frontend
 
 # 复制前端项目文件
-COPY frontend/package*.json ./
+COPY frontend/package.json ./
 
 # 安装依赖
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 # 复制前端源代码
 COPY frontend/ ./
