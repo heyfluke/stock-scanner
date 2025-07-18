@@ -104,9 +104,16 @@ class AIAnalyzer:
             # 获取指定天数的股票数据记录
             recent_df = df.tail(analysis_days).copy()
             recent_df.reset_index(inplace=True)
-            recent_df.rename(columns={'index': 'date'}, inplace=True)
-            # 确保日期列是字符串格式
-            recent_df['date'] = recent_df['date'].dt.strftime('%Y-%m-%d')
+            # 统一把第一个列名（原index）重命名为 'date'
+            recent_df.rename(columns={recent_df.columns[0]: 'date'}, inplace=True)
+            # 确保 'date' 列为字符串格式
+            if pd.api.types.is_datetime64_any_dtype(recent_df['date']):
+                recent_df['date'] = recent_df['date'].dt.strftime('%Y-%m-%d')
+            else:
+                try:
+                    recent_df['date'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
+                except Exception:
+                    recent_df['date'] = recent_df['date'].astype(str)
             
             recent_data = recent_df.to_dict('records')
             logger.debug(f"recent_data for chart: {recent_data}")
