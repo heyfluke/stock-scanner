@@ -27,21 +27,7 @@
           >
             复制结果
           </n-button>
-          <n-dropdown 
-            trigger="click" 
-            :disabled="analyzedStocks.length === 0"
-            :options="exportOptions"
-            @select="handleExportSelect"
-          >
-            <n-button size="small" :disabled="analyzedStocks.length === 0">
-              导出
-              <template #icon>
-                <n-icon>
-                  <DownloadIcon />
-                </n-icon>
-              </template>
-            </n-button>
-          </n-dropdown>
+
         </n-space>
       </n-space>
     </n-card>
@@ -127,13 +113,8 @@ import {
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
 import { 
-  DocumentTextOutline as DocumentTextIcon,
-  DownloadOutline as DownloadIcon,
-  ImageOutline as ImageIcon,
-  DocumentOutline as PdfIcon,
-  GridOutline as ExcelIcon
+  DocumentTextOutline as DocumentTextIcon
 } from '@vicons/ionicons5';
-import html2canvas from 'html2canvas';
 
 import StockCard from './StockCard.vue';
 import ConversationDialog from './ConversationDialog.vue';
@@ -176,29 +157,7 @@ const displayMode = ref<'card' | 'table'>('card');
 const isAnalyzing = computed(() => props.tabData.isAnalyzing);
 const analyzedStocks = computed(() => props.tabData.analyzedStocks);
 
-// 导出选项
-const exportOptions = computed(() => [
-  {
-    label: '导出为图片 (JPG)',
-    key: 'jpg',
-    icon: () => h(NIcon, null, { default: () => h(ImageIcon) })
-  },
-  {
-    label: '导出为CSV',
-    key: 'csv',
-    icon: () => h(NIcon, null, { default: () => h(DownloadIcon) })
-  },
-  {
-    label: '导出为Excel',
-    key: 'excel',
-    icon: () => h(NIcon, null, { default: () => h(ExcelIcon) })
-  },
-  {
-    label: '导出为PDF',
-    key: 'pdf',
-    icon: () => h(NIcon, null, { default: () => h(PdfIcon) })
-  }
-]);
+
 
 // 对话相关状态
 const showConversationDialog = ref(false);
@@ -327,146 +286,11 @@ async function copyAnalysisResults() {
   }
 }
 
-// 处理导出选择
-function handleExportSelect(key: 'csv' | 'jpg' | 'excel' | 'pdf') {
-  switch (key) {
-    case 'jpg':
-      exportAsImage();
-      break;
-    case 'csv':
-      exportToCsv();
-      break;
-    case 'excel':
-      message.info('Excel导出功能即将推出');
-      break;
-    case 'pdf':
-      message.info('PDF导出功能即将推出');
-      break;
-  }
-}
 
-// 导出为图片
-const exportAsImage = async () => {
-  if (analyzedStocks.value.length === 0) {
-    message.error('没有可导出的内容');
-    return;
-  }
-  
-  try {
-    message.loading('正在生成图片...', { duration: 0 });
-    
-    // 使用静态导入的html2canvas
-    
-    // 获取所有股票卡片
-    const stockCards = document.querySelectorAll(`[data-stock-code]`);
-    if (stockCards.length === 0) {
-      message.error('无法找到要导出的内容');
-      return;
-    }
-    
-    // 创建一个容器来放置所有卡片的图片
-    const container = document.createElement('div');
-    container.style.cssText = `
-      background: #f6f6f6;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      width: 800px;
-    `;
-    
-    // 为每个股票卡片生成图片
-    for (const card of Array.from(stockCards)) {
-      const canvas = await html2canvas(card as HTMLElement, {
-        useCORS: true,
-        scale: 2,
-        backgroundColor: '#ffffff',
-        allowTaint: false,
-        foreignObjectRendering: false,
-        logging: false
-      });
-      
-      const img = document.createElement('img');
-      img.src = canvas.toDataURL('image/png');
-      img.style.width = '100%';
-      container.appendChild(img);
-    }
-    
-    // 对整个容器进行截图
-    document.body.appendChild(container);
-    const finalCanvas = await html2canvas(container, {
-      useCORS: true,
-      scale: 1,
-      backgroundColor: '#f6f6f6',
-      allowTaint: false,
-      foreignObjectRendering: false,
-      logging: false
-    });
-    document.body.removeChild(container);
-    
-    // 下载图片
-    const imageUrl = finalCanvas.toDataURL('image/jpeg', 0.9);
-    const link = document.createElement('a');
-    link.href = imageUrl;
-    link.download = `股票分析结果_${new Date().toISOString().split('T')[0]}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    message.destroyAll();
-    message.success('图片已保存');
-  } catch (error) {
-    message.destroyAll();
-    message.error('图片导出失败');
-    console.error('导出图片时出错:', error);
-  }
-};
 
-// 导出为CSV
-const exportToCsv = () => {
-  if (analyzedStocks.value.length === 0) {
-    message.warning('没有可导出的分析结果');
-    return;
-  }
-  
-  try {
-    const headers = ['代码', '名称', '价格', '涨跌幅', 'RSI', '评分', '推荐'];
-    let csvContent = headers.join(',') + '\n';
-    
-    analyzedStocks.value.forEach(stock => {
-      const row = [
-        `"${stock.code}"`,
-        `"${stock.name || ''}"`,
-        stock.price !== undefined ? stock.price.toFixed(2) : '',
-        stock.changePercent !== undefined ? `${stock.changePercent > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%` : '',
-        stock.rsi !== undefined ? stock.rsi.toFixed(2) : '',
-        stock.score !== undefined ? stock.score : '',
-        `"${stock.recommendation || ''}"`
-      ];
-      
-      csvContent += row.join(',') + '\n';
-    });
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `股票分析结果_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    message.success('已导出CSV文件');
-  } catch (error) {
-    message.error('导出失败');
-    console.error('导出CSV时出错:', error);
-  }
-};
+
+
+
 
 // 处理开始对话
 const handleStartConversation = (stock: StockInfo) => {

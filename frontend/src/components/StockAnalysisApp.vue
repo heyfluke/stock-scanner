@@ -128,21 +128,7 @@
                       >
                         复制结果
                       </n-button>
-                      <n-dropdown 
-                        trigger="click" 
-                        :disabled="analyzedStocks.length === 0"
-                        :options="exportOptions"
-                        @select="handleExportSelect"
-                      >
-                        <n-button size="small" :disabled="analyzedStocks.length === 0">
-                          导出
-                          <template #icon>
-                            <n-icon>
-                              <DownloadIcon />
-                            </n-icon>
-                          </template>
-                        </n-button>
-                      </n-dropdown>
+
                     </n-space>
                   </n-space>
                 </div>
@@ -186,42 +172,9 @@
           </n-grid>
         </n-card>
 
-        <div ref="resultsContainerRef" class="export-container">
-          <template v-if="analyzedStocks.length > 0">
-            <n-h2>分析结果</n-h2>
-            <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
-              <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
-                <StockCard :stock="stock" @start-conversation="handleStartConversation" />
-              </n-grid-item>
-            </n-grid>
-          </template>
-        </div>
 
-        <!-- 导出图片模态框 -->
-        <n-modal v-model:show="showImageModal" :width="800" preset="card">
-          <template #header>
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-              <span>导出分析结果图片</span>
-              <n-button text @click="showImageModal = false">
-                <template #icon>
-                  <n-icon><CloseOutline /></n-icon>
-                </template>
-              </n-button>
-            </div>
-          </template>
-          
-          <div style="text-align: center;">
-            <img v-if="exportedImageUrl" :src="exportedImageUrl" style="max-width: 100%; border-radius: 8px;" />
-            <div style="margin-top: 16px;">
-              <n-button type="primary" @click="downloadImage">
-                <template #icon>
-                  <n-icon><DownloadOutline /></n-icon>
-                </template>
-                下载图片
-              </n-button>
-            </div>
-          </div>
-        </n-modal>
+
+
 
         <!-- 对话对话框 -->
         <ConversationDialog
@@ -260,21 +213,14 @@ import {
 import { useClipboard } from '@vueuse/core'
 import { 
   DocumentTextOutline as DocumentTextIcon,
-  DownloadOutline as DownloadIcon,
-  ImageOutline as ImageIcon,
-  DocumentOutline as PdfIcon,
-  GridOutline as ExcelIcon,
   PersonOutline as PersonIcon,
-  ChevronDownOutline as ChevronDownIcon,
-  CloseOutline,
-  DownloadOutline
+  ChevronDownOutline as ChevronDownIcon
 } from '@vicons/ionicons5';
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 import { get, set } from 'idb-keyval';
 import { useRoute, useRouter } from 'vue-router';
 import { marked } from 'marked';
-import html2canvas from 'html2canvas';
 import * as echarts from 'echarts';
 
 import MarketTimeDisplay from './MarketTimeDisplay.vue';
@@ -313,9 +259,7 @@ const analysisDays = ref(30); // 默认30天
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 const displayMode = ref<'card' | 'table'>('card');
-const resultsContainerRef = ref<HTMLElement | null>(null);
-const showImageModal = ref(false);
-const exportedImageUrl = ref('');
+
 
 // 对话相关状态
 const showConversationDialog = ref(false);
@@ -580,29 +524,8 @@ const stockTableColumns = ref<DataTableColumns<StockInfo>>([
   }
 ]);
 
-// 导出选项
-const exportOptions = computed(() => [
-  {
-    label: '导出为图片 (JPG)',
-    key: 'jpg',
-    icon: () => h(NIcon, null, { default: () => h(ImageIcon) })
-  },
-  {
-    label: '导出为CSV',
-    key: 'csv',
-    icon: () => h(NIcon, null, { default: () => h(DownloadIcon) })
-  },
-  {
-    label: '导出为Excel',
-    key: 'excel',
-    icon: () => h(NIcon, null, { default: () => h(ExcelIcon) })
-  },
-  {
-    label: '导出为PDF',
-    key: 'pdf',
-    icon: () => h(NIcon, null, { default: () => h(PdfIcon) })
-  }
-]);
+
+
 
 const showSearch = computed(() => 
   marketOptions.find(option => option.value === marketType.value)?.showSearch
@@ -1037,147 +960,16 @@ function restoreLocalApiConfig() {
   }
 }
 
-// 处理导出选择
-function handleExportSelect(key: 'csv' | 'jpg' | 'excel' | 'pdf') {
-  switch (key) {
-    case 'jpg':
-      exportAsImage();
-      break;
-    case 'csv':
-      exportToCsv();
-      break;
-    case 'excel':
-      message.info('Excel导出功能即将推出');
-      break;
-    case 'pdf':
-      message.info('PDF导出功能即将推出');
-      break;
-  }
-}
+
 
 const stockCardRefs = ref<any[]>([]);
 watch(analyzedStocks, () => {
   stockCardRefs.value = [];
 });
 
-const exportAsImage = async () => {
-  if (!resultsContainerRef.value) {
-    message.error('无法找到要导出的内容。');
-    return;
-  }
-  
-  const container = resultsContainerRef.value;
-  // 保存原始样式以便恢复
-  const originalWidth = container.style.width;
-  const originalPosition = container.style.position;
 
-  try {
-    message.loading('正在生成图片...', { duration: 0 });
 
-    // 获取设备像素比率
-    const dpr = window.devicePixelRatio || 1;
 
-    // 设置容器尺寸，根据设备类型调整
-    container.style.position = 'static'; // 移回正常文档流
-    container.style.left = '0px';
-    
-    // 根据设备类型设置导出宽度，考虑当前视口宽度
-    const isMobile = window.innerWidth <= 768;
-    const exportWidth = isMobile ? Math.min(window.innerWidth, 600) : 1200; // 移动设备使用当前视口宽度
-    container.style.width = `${exportWidth}px`;
-    
-    // 确保容器字体大小与当前渲染一致
-    const computedStyle = window.getComputedStyle(container);
-    const currentFontSize = computedStyle.fontSize;
-    container.style.fontSize = currentFontSize;
-
-    // 强制设置图表容器尺寸，确保图表占满容器
-    const chartContainers = container.querySelectorAll('.chart-container');
-    chartContainers.forEach((chartContainer) => {
-      const element = chartContainer as HTMLElement;
-      element.style.width = '100%'; // 占满父容器
-      element.style.height = '400px'; // 固定高度，不考虑DPR避免双重缩放
-    });
-
-    // 强制调整图表大小
-    stockCardRefs.value.forEach(ref => {
-      if (ref && ref.resizeChart) {
-        ref.resizeChart();
-      }
-    });
-
-    // 等待图表渲染完成
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // 获取图表数据URL，使用较高的像素比率确保清晰度
-    const chartImagesDataURLs = stockCardRefs.value.map(ref => {
-      if (ref && ref.getChartDataURL) {
-        return ref.getChartDataURL({
-          type: 'jpeg',
-          pixelRatio: Math.max(dpr, 2), // 确保图表至少2倍清晰度
-          backgroundColor: '#fff'
-        });
-      }
-      return null;
-    });
-
-    const canvas = await html2canvas(resultsContainerRef.value, {
-      useCORS: true,
-      scale: 1, // 固定为1，避免字体缩放问题
-      backgroundColor: '#f0f2f5',
-      // 移除固定宽高，让html2canvas自动计算
-      allowTaint: false, // 禁用allowTaint，避免canvas污染
-      foreignObjectRendering: false, // 禁用foreignObject，可能导致渲染问题
-      logging: false, // 禁用日志
-      onclone: (clonedDoc) => {
-        // 简化处理，只处理图表替换
-        const allChartContainers = clonedDoc.querySelectorAll('.chart-container');
-        allChartContainers.forEach((chartContainer, index) => {
-          const dataURL = chartImagesDataURLs[index];
-          if (dataURL) {
-            const originalChart = chartContainer.querySelector('.chart');
-            if (originalChart) (originalChart as HTMLElement).style.display = 'none';
-            const img = clonedDoc.createElement('img');
-            img.src = dataURL;
-            img.style.width = '100%';
-            img.style.height = '400px'; // 确保图片高度一致
-            img.style.display = 'block';
-            (chartContainer as HTMLElement).appendChild(img);
-          }
-        });
-      }
-    });
-    
-    exportedImageUrl.value = canvas.toDataURL('image/jpeg');
-    showImageModal.value = true;
-    message.destroyAll();
-    
-  } catch (error) {
-    message.destroyAll();
-    message.error('图片导出失败。');
-    console.error('图片导出错误:', error);
-  } finally {
-    // 截图后恢复容器的原始宽度
-    container.style.width = originalWidth;
-  }
-};
-
-// 下载导出的图片
-const downloadExportedImage = () => {
-  if (!exportedImageUrl.value) {
-    message.error('没有可下载的图片');
-    return;
-  }
-  const link = document.createElement('a');
-  link.href = exportedImageUrl.value;
-  link.download = `股票分析结果_${new Date().toISOString().split('T')[0]}.jpg`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-// 下载图片（别名方法）
-const downloadImage = downloadExportedImage;
 
 // 处理开始对话
 const handleStartConversation = (stock: StockInfo) => {
@@ -1185,91 +977,9 @@ const handleStartConversation = (stock: StockInfo) => {
   showConversationDialog.value = true;
 };
 
-const exportToCsv = () => {
-  if (analyzedStocks.value.length === 0) {
-    message.warning('没有可导出的分析结果');
-    return;
-  }
-  
-  try {
-    // 创建CSV内容
-    const headers = ['代码', '名称', '价格', '涨跌幅', 'RSI', '均线趋势', 'MACD信号', '成交量状态', '评分', '推荐', '分析日期'];
-    let csvContent = headers.join(',') + '\n';
-    
-    // 添加数据行
-    analyzedStocks.value.forEach(stock => {
-      const row = [
-        `"${stock.code}"`,
-        `"${stock.name || ''}"`,
-        stock.price !== undefined ? stock.price.toFixed(2) : '',
-        stock.changePercent !== undefined ? `${stock.changePercent > 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%` : '',
-        stock.rsi !== undefined ? stock.rsi.toFixed(2) : '',
-        stock.ma_trend ? getChineseTrend(stock.ma_trend) : '',
-        stock.macd_signal ? getChineseSignal(stock.macd_signal) : '',
-        stock.volume_status ? getChineseVolumeStatus(stock.volume_status) : '',
-        stock.score !== undefined ? stock.score : '',
-        `"${stock.recommendation || ''}"`,
-        stock.analysis_date || ''
-      ];
-      
-      csvContent += row.join(',') + '\n';
-    });
-    
-    // 创建Blob对象
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    // 创建下载链接
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `股票分析结果_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    // 添加到文档并触发点击
-    document.body.appendChild(link);
-    link.click();
-    
-    // 清理
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    message.success('已导出CSV文件');
-  } catch (error) {
-    message.error('导出失败');
-    console.error('导出CSV时出错:', error);
-  }
-};
 
-// 辅助函数：获取中文趋势描述
-function getChineseTrend(trend: string): string {
-  const trendMap: Record<string, string> = {
-    'UP': '上升',
-    'DOWN': '下降',
-    'NEUTRAL': '平稳'
-  };
-  return trendMap[trend] || trend;
-}
 
-// 辅助函数：获取中文信号描述
-function getChineseSignal(signal: string): string {
-  const signalMap: Record<string, string> = {
-    'BUY': '买入',
-    'SELL': '卖出',
-    'HOLD': '持有',
-    'NEUTRAL': '中性'
-  };
-  return signalMap[signal] || signal;
-}
 
-// 辅助函数：获取中文成交量状态描述
-function getChineseVolumeStatus(status: string): string {
-  const statusMap: Record<string, string> = {
-    'HIGH': '放量',
-    'LOW': '缩量',
-    'NORMAL': '正常'
-  };
-  return statusMap[status] || status;
-}
 
 // 页面加载时获取默认配置和公告
 onMounted(async () => {
@@ -1649,23 +1359,7 @@ function handleAnnouncementClose() {
   }
 }
 
-.export-container {
-  position: absolute;
-  left: -9999px; /* 将容器移出可视区域 */
-  top: auto;
-  padding: 20px;
-  background-color: #f0f2f5;
-}
 
-/* 覆盖StockCard的样式，以便在导出时完全展开内容 */
-.export-container :deep(.analysis-result) {
-  max-height: none !important;
-  overflow-y: visible !important;
-}
-
-.export-container :deep(.chart-container) {
-  height: 400px; /* 确保图表在导出时有固定高度 */
-}
 
 /* 用户面板样式 */
 .user-panel-card {
