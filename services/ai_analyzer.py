@@ -31,11 +31,35 @@ class AIAnalyzer:
         # 加载环境变量
         load_dotenv()
         
-        # 设置API配置
-        self.API_URL = custom_api_url or os.getenv('API_URL', 'https://api.openai.com/v1/chat/completions')
-        self.API_KEY = custom_api_key or os.getenv('API_KEY', '')
-        self.API_MODEL = custom_api_model or os.getenv('API_MODEL', 'gpt-4o')
-        self.API_TIMEOUT = int(custom_api_timeout or os.getenv('API_TIMEOUT', '60'))
+        # 设置API配置，处理空字符串环境变量
+        self.API_URL = (custom_api_url if custom_api_url and custom_api_url.strip() else None) or \
+                      (os.getenv('API_URL') if os.getenv('API_URL') and os.getenv('API_URL').strip() else None) or \
+                      'https://api.openai.com/v1/chat/completions'
+        
+        self.API_KEY = (custom_api_key if custom_api_key and custom_api_key.strip() else None) or \
+                      (os.getenv('API_KEY') if os.getenv('API_KEY') and os.getenv('API_KEY').strip() else '') or \
+                      ''
+        
+        self.API_MODEL = (custom_api_model if custom_api_model and custom_api_model.strip() else None) or \
+                        (os.getenv('API_MODEL') if os.getenv('API_MODEL') and os.getenv('API_MODEL').strip() else None) or \
+                        'gpt-4o'
+        
+        # 处理API超时参数，确保空字符串也能正确处理
+        timeout_str = None
+        if custom_api_timeout and custom_api_timeout.strip():
+            timeout_str = custom_api_timeout.strip()
+        elif os.getenv('API_TIMEOUT') and os.getenv('API_TIMEOUT').strip():
+            timeout_str = os.getenv('API_TIMEOUT').strip()
+        else:
+            timeout_str = '60'
+        
+        try:
+            self.API_TIMEOUT = int(timeout_str)
+            if self.API_TIMEOUT <= 0:
+                raise ValueError("超时时间必须大于0")
+        except (ValueError, TypeError) as e:
+            logger.warning(f"无效的API超时值: {timeout_str}，错误: {e}，使用默认值60秒")
+            self.API_TIMEOUT = 60
         
         logger.info(f"AIAnalyzer初始化完成: URL={self.API_URL}, MODEL={self.API_MODEL}, TIMEOUT={self.API_TIMEOUT}")
         
