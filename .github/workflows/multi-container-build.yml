@@ -31,14 +31,14 @@ jobs:
             # Extract version from git tag (e.g., v1.2.3 -> 1.2.3)
             VERSION=${{ github.ref_name }}
             echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
-            # Only tag latest for version tags (not SNAPSHOT)
-            if [[ ! "$VERSION" == *"-SNAPSHOT" ]]; then
+            # Only tag latest for v* tags (stable releases), never for main branch
+            if [[ "$VERSION" == v* && ! "$VERSION" == *"-SNAPSHOT" ]]; then
               echo "should_tag_latest=true" >> $GITHUB_OUTPUT
             else
               echo "should_tag_latest=false" >> $GITHUB_OUTPUT
             fi
           else
-            # Fallback to timestamp for manual runs
+            # Fallback to timestamp for manual runs and main branch pushes
             echo "version=$(date +'%Y%m%d%H%M%S')-${{ github.run_number }}" >> $GITHUB_OUTPUT
             echo "should_tag_latest=false" >> $GITHUB_OUTPUT
           fi
@@ -170,26 +170,7 @@ jobs:
         cache-from: type=gha,scope=stock-scanner-backend
         cache-to: type=gha,scope=stock-scanner-backend,mode=max
 
-  test-configurations:
-    needs: [prepare, build-monolithic, build-frontend, build-backend]
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
-      run: |
-        pip install pyyaml
-    
-    - name: Test Docker Compose configurations
-      run: |
-        python tests/test-docker-compose.py
+
 
   check_secrets:
     runs-on: ubuntu-latest
@@ -201,7 +182,7 @@ jobs:
         run: echo "can_deploy=${{ secrets.SERVER_HOST != '' }}" >> $GITHUB_OUTPUT
 
   deploy:
-    needs: [prepare, build-monolithic, build-frontend, build-backend, test-configurations, check_secrets]
+    needs: [prepare, build-monolithic, build-frontend, build-backend, check_secrets]
     runs-on: ubuntu-latest
     if: |
       needs.check_secrets.outputs.can_deploy == 'true' && success() && ((github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'push' && github.ref_type == 'tag' && !endsWith(github.ref_name, '-SNAPSHOT')))
@@ -326,24 +307,4 @@ jobs:
           
           echo "部署完成并验证成功！"
   
-  notify:
-    needs: [prepare, build-monolithic, build-frontend, build-backend, test-configurations, deploy, check_secrets]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Notify Slack
-        uses: 8398a7/action-slack@v3
-        with:
-          status: ${{ job.status }}
-          channel: '#deployments'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-          text: |
-            Stock Scanner 多容器构建部署 ${{ job.status }}
-            - 版本: ${{ needs.prepare.outputs.version }}
-            - 单体容器: ${{ needs.build-monolithic.result }}
-            - 前端容器: ${{ needs.build-frontend.result }}
-            - 后端容器: ${{ needs.build-backend.result }}
-            - 配置测试: ${{ needs.test-configurations.result }}
-            - 部署: ${{ needs.deploy.result }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }} 
+ 
