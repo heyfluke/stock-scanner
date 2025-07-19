@@ -64,7 +64,7 @@
     <!-- 侧边栏抽屉 -->
     <n-drawer 
       v-model:show="showSidebar" 
-      :width="isMobile ? '100%' : 400"
+      :width="drawerWidth"
       placement="right"
     >
       <n-drawer-content 
@@ -156,6 +156,17 @@ let intervalId: number | null = null;
 // 移动端检测
 const isMobile = computed(() => {
   return window.innerWidth <= 768;
+});
+
+// 抽屉宽度计算
+const drawerWidth = computed(() => {
+  if (isMobile.value) {
+    // 移动端：85%宽度，但最大不超过350px
+    return Math.min(window.innerWidth * 0.85, 350);
+  } else {
+    // 桌面端：固定400px
+    return 400;
+  }
 });
 
 // 切换侧边栏
