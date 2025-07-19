@@ -133,6 +133,7 @@ import {
   DocumentOutline as PdfIcon,
   GridOutline as ExcelIcon
 } from '@vicons/ionicons5';
+import html2canvas from 'html2canvas';
 
 import StockCard from './StockCard.vue';
 import ConversationDialog from './ConversationDialog.vue';
@@ -354,8 +355,7 @@ const exportAsImage = async () => {
   try {
     message.loading('正在生成图片...', { duration: 0 });
     
-    // 动态导入html2canvas
-    const html2canvas = (await import('html2canvas')).default;
+    // 使用静态导入的html2canvas
     
     // 获取所有股票卡片
     const stockCards = document.querySelectorAll(`[data-stock-code]`);

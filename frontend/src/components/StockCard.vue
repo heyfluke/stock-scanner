@@ -242,6 +242,7 @@ import {
   ChatbubbleEllipsesOutline,
   ImageOutline
 } from '@vicons/ionicons5';
+import html2canvas from 'html2canvas';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
 import { use } from 'echarts/core';
@@ -994,8 +995,7 @@ const handleExportImage = async () => {
     exporting.value = true;
     message.loading('正在生成图片...', { duration: 0 });
     
-    // 动态导入html2canvas
-    const html2canvas = (await import('html2canvas')).default;
+    // 使用静态导入的html2canvas
     
     // 获取当前卡片的DOM元素
     const cardElement = document.querySelector(`[data-stock-code="${props.stock.code}"]`) as HTMLElement;
