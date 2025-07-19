@@ -1008,6 +1008,47 @@ const handleExportImage = async () => {
       return;
     }
     
+    // 确保样式正确应用到导出图片
+    const currentWidth = window.innerWidth;
+    let technicalIndicators = cardElement.querySelector('.technical-indicators') as HTMLElement;
+    let indicatorsGrid = cardElement.querySelector('.indicators-grid') as HTMLElement;
+    let indicatorItems = cardElement.querySelectorAll('.indicator-item') as NodeListOf<HTMLElement>;
+    let originalTechnicalStyle = '';
+    let originalGridStyle = '';
+    let originalItemStyles: string[] = [];
+    
+    if (indicatorsGrid && technicalIndicators) {
+      originalTechnicalStyle = technicalIndicators.style.cssText;
+      originalGridStyle = indicatorsGrid.style.cssText;
+      // 保存所有indicator-item的原始样式
+      indicatorItems.forEach((item, index) => {
+        originalItemStyles[index] = item.style.cssText;
+      });
+      
+      // 根据当前屏幕宽度应用对应的样式
+      if (currentWidth <= 375) {
+        technicalIndicators.style.cssText += '; margin: 0.5rem 0.25rem; border-radius: 0.45rem; padding: 0.4rem 0.3rem;';
+        indicatorsGrid.style.cssText += '; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; padding: 0.2rem;';
+        indicatorItems.forEach(item => {
+          item.style.cssText += '; border-radius: 0.45rem; padding: 0.5rem 0.25rem; background-color: rgba(255, 255, 255, 0.7); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0, 0, 0, 0.08);';
+        });
+      } else if (currentWidth <= 480) {
+        technicalIndicators.style.cssText += '; margin: 0.5rem 0.25rem; border-radius: 0.45rem; padding: 0.4rem 0.3rem;';
+        indicatorsGrid.style.cssText += '; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; padding: 0.2rem;';
+        indicatorItems.forEach(item => {
+          item.style.cssText += '; border-radius: 0.45rem; padding: 0.5rem 0.25rem; background-color: rgba(255, 255, 255, 0.7); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0, 0, 0, 0.08);';
+        });
+      } else if (currentWidth <= 768) {
+        technicalIndicators.style.cssText += '; margin: 0.75rem 0.5rem; background-color: rgba(240, 240, 245, 0.5); border-radius: 0.5rem; padding: 0.5rem; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);';
+        indicatorsGrid.style.cssText += '; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; padding: 0.25rem;';
+        indicatorItems.forEach(item => {
+          item.style.cssText += '; border-radius: 0.5rem; padding: 0.625rem 0.5rem; background-color: rgba(255, 255, 255, 0.7); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);';
+        });
+      } else {
+        indicatorsGrid.style.cssText += '; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;';
+      }
+    }
+    
     // 生成canvas
     const canvas = await html2canvas(cardElement, {
       useCORS: true,
@@ -1017,6 +1058,15 @@ const handleExportImage = async () => {
       foreignObjectRendering: false,
       logging: false
     });
+    
+    // 恢复原始样式
+    if (indicatorsGrid && technicalIndicators) {
+      technicalIndicators.style.cssText = originalTechnicalStyle;
+      indicatorsGrid.style.cssText = originalGridStyle;
+      indicatorItems.forEach((item, index) => {
+        item.style.cssText = originalItemStyles[index] || '';
+      });
+    }
     
     // 转换为图片并下载
     const imageUrl = canvas.toDataURL('image/png');
