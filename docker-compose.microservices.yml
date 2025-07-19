@@ -1,8 +1,5 @@
 # 微服务架构部署配置
 # 适用于企业级用户，支持前后端分离和独立数据库
-
-version: '3.8'
-
 services:
   # 前端服务 - Vue应用 + Nginx
   frontend:

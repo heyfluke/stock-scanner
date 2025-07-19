@@ -1,7 +1,18 @@
 <template>
   <div class="user-panel">
+    <!-- 加载状态 -->
+    <div v-if="isLoading" class="loading-section">
+      <n-space justify="center" align="center" style="min-height: 120px;">
+        <n-spin size="medium">
+          <template #description>
+            检查登录状态...
+          </template>
+        </n-spin>
+      </n-space>
+    </div>
+    
     <!-- 用户未登录状态 -->
-    <div v-if="!isLoggedIn" class="auth-section">
+    <div v-else-if="!isLoggedIn" class="auth-section">
       <n-tabs type="segment" animated v-model:value="activeTab">
         <n-tab-pane name="login" tab="登录">
           <n-form ref="loginFormRef" :model="loginForm" :rules="loginRules">
@@ -267,7 +278,7 @@ import { ref, reactive, onMounted, computed } from 'vue';
 import {
   NCard, NTabs, NTabPane, NForm, NFormItem, NInput, NButton,
   NDescriptions, NDescriptionsItem, NList, NListItem, NThing,
-  NTag, NSpace, NText, NEmpty, NIcon, useMessage
+  NTag, NSpace, NText, NEmpty, NIcon, NSpin, NModal, useMessage
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { 
@@ -300,7 +311,17 @@ const router = useRouter();
 
 // 用户状态
 const isLoggedIn = ref(false);
+const isLoading = ref(true);  // 添加loading状态
 const userProfile = ref<UserProfile | null>(null);
+
+// 初始化时检查本地token状态
+const initializeAuthState = () => {
+  const token = localStorage.getItem('token');
+  if (token && token.trim()) {
+    // 如果有token，假设已登录，避免闪烁
+    isLoggedIn.value = true;
+  }
+};
 const favorites = ref<UserFavorite[]>([]);
 const analysisHistory = ref<AnalysisHistoryItem[]>([]);
 const deletingHistoryId = ref<number | null>(null);
@@ -456,7 +477,9 @@ const loadUserData = async () => {
     // 检查认证状态
     const isAuth = await apiService.checkAuth();
     if (!isAuth) {
+      // token验证失败，切换为未登录状态
       isLoggedIn.value = false;
+      isLoading.value = false;
       return;
     }
     
@@ -472,10 +495,15 @@ const loadUserData = async () => {
         loadAnalysisHistory(),
         loadConversations()
       ]);
+    } else {
+      isLoggedIn.value = false;
     }
   } catch (error) {
     console.error('加载用户数据失败:', error);
     isLoggedIn.value = false;
+  } finally {
+    // 无论成功失败都结束loading状态
+    isLoading.value = false;
   }
 };
 
@@ -603,6 +631,9 @@ const handleDeleteConversation = async (conversation: Conversation) => {
 
 // 初始化
 onMounted(() => {
+  // 先初始化认证状态（基于本地token）
+  initializeAuthState();
+  // 然后异步验证token有效性
   loadUserData();
 });
 </script>
