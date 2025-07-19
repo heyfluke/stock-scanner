@@ -243,10 +243,20 @@ class AIAnalyzer:
                 "stream": stream
             }
             
+            # 检查API_KEY是否为空
+            if not self.API_KEY or self.API_KEY.strip() == "":
+                logger.error("API_KEY为空，无法进行股票分析")
+                yield json.dumps({
+                    "stock_code": stock_code,
+                    "error": "API_KEY未配置或为空，请检查API配置",
+                    "status": "error"
+                }, ensure_ascii=False)
+                return
+            
             # 准备请求头
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.API_KEY}"
+                "Authorization": f"Bearer {self.API_KEY.strip()}"
             }
             
             # 获取当前日期作为分析日期
@@ -551,10 +561,19 @@ class AIAnalyzer:
                 "stream": stream
             }
             
+            # 检查API_KEY是否为空
+            if not self.API_KEY or self.API_KEY.strip() == "":
+                logger.error("API_KEY为空，无法处理对话请求")
+                yield json.dumps({
+                    "error": "API_KEY未配置或为空，请检查API配置",
+                    "status": "error"
+                })
+                return
+            
             # 准备请求头
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.API_KEY}"
+                "Authorization": f"Bearer {self.API_KEY.strip()}"
             }
             
             logger.debug(f"发送对话请求: URL={api_url}, MODEL={self.API_MODEL}, STREAM={stream}")

@@ -15,6 +15,10 @@ class APIUtils:
         if not base_url:
             return ""
             
+        # 如果已经是完整的chat/completions端点，直接返回
+        if base_url.endswith('/chat/completions') or base_url.endswith('/chat/completions/'):
+            return base_url.rstrip('/')
+            
         if base_url.endswith('/'):
             return f"{base_url}chat/completions"
         elif base_url.endswith('#'):
