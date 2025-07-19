@@ -1,14 +1,14 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
 import { apiService } from '@/services/api';
-import StockAnalysisApp from '@/components/StockAnalysisApp.vue';
+import TabsAnalysisManager from '@/components/TabsAnalysisManager.vue';
 import LoginPage from '@/components/LoginPage.vue';
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     name: 'Home',
-    component: StockAnalysisApp,
+    component: TabsAnalysisManager,
     meta: { requiresAuth: true }
   },
   {

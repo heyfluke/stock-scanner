@@ -1,5 +1,5 @@
 <template>
-  <n-card class="stock-card mobile-card mobile-shadow mobile-stock-card" :bordered="false" :class="{ 'is-analyzing': isAnalyzing }">
+  <n-card class="stock-card mobile-card mobile-shadow mobile-stock-card" :bordered="false" :class="{ 'is-analyzing': isAnalyzing }" :data-stock-code="stock.code">
     <div class="card-header mobile-card-header">
       <div class="header-main">
         <div class="header-left">
@@ -81,6 +81,18 @@
                 <n-icon><ShareOutline /></n-icon>
               </template>
               分享
+            </n-button>
+            <n-button 
+              size="small" 
+              type="warning" 
+              secondary 
+              @click="handleExportImage"
+              :loading="exporting"
+            >
+              <template #icon>
+                <n-icon><ImageOutline /></n-icon>
+              </template>
+              保存图片
             </n-button>
             <n-button 
               size="small" 
@@ -227,7 +239,8 @@ import {
   SyncOutline,
   HeartOutline,
   ShareOutline,
-  ChatbubbleEllipsesOutline
+  ChatbubbleEllipsesOutline,
+  ImageOutline
 } from '@vicons/ionicons5';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
@@ -268,6 +281,7 @@ const emit = defineEmits<{
 // 状态变量
 const favoriting = ref(false);
 const sharing = ref(false);
+const exporting = ref(false);
 const isFavorite = ref(false);
 
 const chartInstance = ref<any>(null);
@@ -971,6 +985,52 @@ const handleShare = async () => {
     message.error('分享失败');
   } finally {
     sharing.value = false;
+  }
+};
+
+// 处理导出图片功能
+const handleExportImage = async () => {
+  try {
+    exporting.value = true;
+    message.loading('正在生成图片...', { duration: 0 });
+    
+    // 动态导入html2canvas
+    const html2canvas = (await import('html2canvas')).default;
+    
+    // 获取当前卡片的DOM元素
+    const cardElement = document.querySelector(`[data-stock-code="${props.stock.code}"]`) as HTMLElement;
+    if (!cardElement) {
+      message.error('无法找到要导出的卡片');
+      return;
+    }
+    
+    // 生成canvas
+    const canvas = await html2canvas(cardElement, {
+      useCORS: true,
+      scale: 2, // 提高清晰度
+      backgroundColor: '#ffffff',
+      allowTaint: false,
+      foreignObjectRendering: false,
+      logging: false
+    });
+    
+    // 转换为图片并下载
+    const imageUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = `${props.stock.code}_${props.stock.name || '股票分析'}_${new Date().toISOString().split('T')[0]}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    message.destroyAll();
+    message.success('图片已保存');
+  } catch (error) {
+    message.destroyAll();
+    message.error('图片导出失败');
+    console.error('导出图片时出错:', error);
+  } finally {
+    exporting.value = false;
   }
 };
 
