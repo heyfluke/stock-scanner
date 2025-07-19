@@ -59,6 +59,9 @@ API_TIMEOUT=30
 ANNOUNCEMENT_TEXT=your_text
 ```
 
+若跳过上述设置，则在此网页设置相关的环境变量（关键的是API变量）：
+![Stock Scanner 示例图片](./docs/synology_container_project_setting.png)
+
 ### 2. 创建项目（对应docker-compose配置文件）
 1.  打开`Container Manager`，找到`Project`。
 3.  点击 `Create` 按钮。
