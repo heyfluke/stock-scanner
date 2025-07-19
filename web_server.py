@@ -590,11 +590,11 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
         
         logger.debug(f"接收到分析请求: stock_codes={stock_codes}, market_type={market_type}")
         
-        # 获取自定义API配置
-        custom_api_url = request.api_url
-        custom_api_key = request.api_key
-        custom_api_model = request.api_model
-        custom_api_timeout = request.api_timeout
+        # 获取自定义API配置，处理空字符串
+        custom_api_url = request.api_url if request.api_url and request.api_url.strip() else None
+        custom_api_key = request.api_key if request.api_key and request.api_key.strip() else None
+        custom_api_model = request.api_model if request.api_model and request.api_model.strip() else None
+        custom_api_timeout = request.api_timeout if request.api_timeout and request.api_timeout.strip() else None
         analysis_days = request.analysis_days or 30  # 默认30天
         
         logger.debug(f"自定义API配置: URL={custom_api_url}, 模型={custom_api_model}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
