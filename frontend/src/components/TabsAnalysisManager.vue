@@ -499,6 +499,20 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     if (allStocksFinished && tab.isAnalyzing) {
       tab.isAnalyzing = false;
       tab.analysisCompleted = true;
+      
+      // 强制刷新tab状态 - 在全局tabs数组中更新
+      const tabIndex = analysisTabs.value.findIndex(t => t.id === tab.id);
+      if (tabIndex >= 0) {
+        // 创建全新的tab对象确保Vue检测到变化
+        const newTab = { 
+          ...tab, 
+          isAnalyzing: false, 
+          analysisCompleted: true 
+        };
+        analysisTabs.value[tabIndex] = newTab;
+        analysisTabs.value = [...analysisTabs.value];
+      }
+      
       message.success('所有股票分析完成');
     }
     
