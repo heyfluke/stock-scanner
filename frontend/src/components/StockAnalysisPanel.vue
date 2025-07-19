@@ -61,7 +61,7 @@
       
       <template v-else-if="displayMode === 'card'">
         <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
-          <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
+                          <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
             <StockCard 
               :stock="stock" 
               @start-conversation="handleStartConversation"
@@ -149,6 +149,8 @@ const emit = defineEmits<{
 // 使用Naive UI的组件API
 const message = useMessage();
 const { copy } = useClipboard();
+
+
 
 // 本地显示状态
 const displayMode = ref<'card' | 'table'>('card');

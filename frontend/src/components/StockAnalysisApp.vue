@@ -172,9 +172,17 @@
           </n-grid>
         </n-card>
 
-
-
-
+        <!-- 隐藏的导出容器，保持原有的双重渲染结构 -->
+        <div ref="resultsContainerRef" class="export-container" style="display: none;">
+          <template v-if="analyzedStocks.length > 0">
+            <n-h2>分析结果</n-h2>
+            <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
+              <n-grid-item v-for="stock in analyzedStocks" :key="stock.code">
+                <StockCard :stock="stock" @start-conversation="handleStartConversation" />
+              </n-grid-item>
+            </n-grid>
+          </template>
+        </div>
 
         <!-- 对话对话框 -->
         <ConversationDialog
@@ -259,6 +267,7 @@ const analysisDays = ref(30); // 默认30天
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 const displayMode = ref<'card' | 'table'>('card');
+const resultsContainerRef = ref<HTMLElement | null>(null);
 
 
 // 对话相关状态
@@ -677,6 +686,19 @@ function handleStreamUpdate(data: StreamAnalysisUpdate) {
     
     // 使用Vue的响应式API更新数组
     analyzedStocks.value[stockIndex] = stock;
+    
+    // 强制触发响应式更新
+    analyzedStocks.value = [...analyzedStocks.value];
+    
+    // 检查是否所有股票都已完成或出错
+    const allStocksFinished = analyzedStocks.value.every(s => 
+      s.analysisStatus === 'completed' || s.analysisStatus === 'error'
+    );
+    
+    if (allStocksFinished && isAnalyzing.value) {
+      isAnalyzing.value = false;
+      message.success('所有股票分析完成');
+    }
   }
 }
 
@@ -962,14 +984,13 @@ function restoreLocalApiConfig() {
 
 
 
+
+
+
 const stockCardRefs = ref<any[]>([]);
 watch(analyzedStocks, () => {
   stockCardRefs.value = [];
 });
-
-
-
-
 
 // 处理开始对话
 const handleStartConversation = (stock: StockInfo) => {
@@ -1388,5 +1409,14 @@ function handleAnnouncementClose() {
   flex-direction: column;
   justify-content: center;
   min-height: calc(100vh - 40px);
+}
+
+/* 隐藏导出容器 */
+.export-container {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  visibility: hidden;
+  pointer-events: none;
 }
 </style>

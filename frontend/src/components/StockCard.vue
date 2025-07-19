@@ -279,6 +279,10 @@ const emit = defineEmits<{
   'start-conversation': [stock: StockInfo];
 }>();
 
+
+
+
+
 // 状态变量
 const favoriting = ref(false);
 const sharing = ref(false);
@@ -609,7 +613,7 @@ const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
 
 // 监听分析内容变化
-watch(() => props.stock.analysis, (newVal) => {
+watch(() => props.stock.analysis, (newVal, oldVal) => {
   if (newVal && props.stock.analysisStatus === 'analyzing') {
     lastAnalysisLength.value = newVal.length;
     lastAnalysisText.value = newVal;

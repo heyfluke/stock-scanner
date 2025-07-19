@@ -477,6 +477,31 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     if (data.chart_data) stock.chart_data = data.chart_data;
     
     tab.analyzedStocks[stockIndex] = stock;
+    
+    // 强制触发响应式更新
+    tab.analyzedStocks = [...tab.analyzedStocks];
+    
+    // 强制更新整个tab对象以确保Vue检测到变化
+    const tabIndex = analysisTabs.value.findIndex(t => t.id === tab.id);
+    if (tabIndex >= 0) {
+      // 创建一个新的tab对象
+      const newTab = { ...tab };
+      analysisTabs.value[tabIndex] = newTab;
+      // 再强制更新整个tabs数组
+      analysisTabs.value = [...analysisTabs.value];
+    }
+    
+    // 检查是否所有股票都已完成或出错
+    const allStocksFinished = tab.analyzedStocks.every(s => 
+      s.analysisStatus === 'completed' || s.analysisStatus === 'error'
+    );
+    
+    if (allStocksFinished && tab.isAnalyzing) {
+      tab.isAnalyzing = false;
+      tab.analysisCompleted = true;
+      message.success('所有股票分析完成');
+    }
+    
     saveTabs();
   }
 };
