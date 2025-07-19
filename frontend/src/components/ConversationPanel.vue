@@ -254,10 +254,18 @@ const handleSendMessage = async () => {
         reader.releaseLock();
       }
     } else {
-      message.error('发送消息失败');
+      // 检查认证状态
+      const token = localStorage.getItem('token');
+      if (!token || !token.trim()) {
+        message.error('用户未登录，请重新登录后再试');
+      } else {
+        message.error('发送消息失败，请检查网络连接');
+      }
     }
   } catch (error) {
-    message.error('发送消息失败');
+    console.error('发送消息时出错:', error);
+    const errorMessage = error instanceof Error ? error.message : '发送消息失败';
+    message.error(`流式响应错误: ${errorMessage}`);
   } finally {
     sending.value = false;
   }

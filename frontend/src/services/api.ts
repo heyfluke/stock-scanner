@@ -213,17 +213,36 @@ export const apiService = {
     try {
       // 构建完整的URL
       const baseURL = window.location.origin;
+      
+      // 构建headers，只有在token存在时才添加Authorization
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      const token = localStorage.getItem('token');
+      if (token && token.trim()) {
+        headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        console.warn('发送消息时未找到有效的认证token，这可能会导致认证失败');
+      }
+      
       const response = await fetch(`${baseURL}/api/conversations/${conversationId}/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
+        headers,
         body: JSON.stringify({ message })
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorText = await response.text();
+          if (errorText) {
+            errorMessage += ` - ${errorText}`;
+          }
+        } catch (e) {
+          // 忽略解析错误文本失败的情况
+        }
+        throw new Error(errorMessage);
       }
       
       return response.body;
