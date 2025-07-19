@@ -1,50 +1,20 @@
 <template>
   <div class="tabs-analysis-container mobile-bottom-extend">
-    <!-- 公告横幅 -->
-    <AnnouncementBanner 
-      v-if="announcement && showAnnouncementBanner" 
-      :content="announcement" 
-      :auto-close-time="5"
-      @close="handleAnnouncementClose"
-    />
-    
-    <!-- 市场时间显示 -->
-    <MarketTimeDisplay :is-mobile="isMobile" />
-    
-    <!-- 用户面板（可折叠） -->
-    <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow" :class="{ 'register-mode': isRegisterMode }">
-      <template #header>
-        <n-space align="center" justify="space-between">
-          <n-space align="center">
-            <n-icon :component="PersonIcon" />
-            <span>{{ isRegisterMode ? '用户注册' : '用户中心' }}</span>
-          </n-space>
-          <n-button 
-            v-if="!isRegisterMode"
-            text 
-            @click="toggleUserPanel"
-            :style="{ transform: showUserPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }"
-          >
-            <n-icon :component="ChevronDownIcon" />
-          </n-button>
-        </n-space>
-      </template>
-      
-      <n-collapse-transition :show="showUserPanel || isRegisterMode">
-        <UserPanel 
-          :default-tab="route.query.register === 'true' ? 'register' : 'login'" 
-          @restore-history="handleRestoreHistory"
-        />
-      </n-collapse-transition>
-    </n-card>
-    
-    <!-- API配置面板 -->
-    <ApiConfigPanel
-      v-if="!isRegisterMode"
+    <!-- 顶部导航栏 -->
+    <TopNavbar
       :default-api-url="defaultApiUrl"
       :default-api-model="defaultApiModel"
       :default-api-timeout="defaultApiTimeout"
       @update:api-config="updateApiConfig"
+      @restore-history="handleRestoreHistory"
+    />
+    
+    <!-- 公告横幅 -->
+    <AnnouncementBanner 
+      v-if="announcement && showAnnouncementBanner && !isRegisterMode" 
+      :content="announcement" 
+      :auto-close-time="5"
+      @close="handleAnnouncementClose"
     />
     
     <!-- 多标签页分析容器 -->
@@ -101,16 +71,11 @@ import {
   useMessage,
   useDialog
 } from 'naive-ui';
-import { 
-  PersonOutline as PersonIcon,
-  ChevronDownOutline as ChevronDownIcon,
-} from '@vicons/ionicons5';
+
 import { useRoute, useRouter } from 'vue-router';
 
-import MarketTimeDisplay from './MarketTimeDisplay.vue';
-import ApiConfigPanel from './ApiConfigPanel.vue';
+import TopNavbar from './TopNavbar.vue';
 import AnnouncementBanner from './AnnouncementBanner.vue';
-import UserPanel from './UserPanel.vue';
 import StockAnalysisForm from './StockAnalysisForm.vue';
 import StockAnalysisPanel from './StockAnalysisPanel.vue';
 
@@ -133,6 +98,8 @@ interface AnalysisTab {
   isAnalyzing: boolean;
   analyzedStocks: StockInfo[];
   analysisCompleted: boolean;
+  // 历史记录ID（如果从历史记录恢复的话）
+  historyId?: number;
 }
 
 // 使用Naive UI的组件API
@@ -148,8 +115,7 @@ const defaultApiTimeout = ref('60');
 const announcement = ref('');
 const showAnnouncementBanner = ref(true);
 
-// 用户面板状态
-const showUserPanel = ref(false);
+
 
 // 标签页管理状态
 const analysisTabs = ref<AnalysisTab[]>([]);
@@ -528,43 +494,154 @@ const updateApiConfig = (config: ApiConfig) => {
   apiConfig.value = { ...config };
 };
 
-// 切换用户面板显示状态
-const toggleUserPanel = () => {
-  showUserPanel.value = !showUserPanel.value;
-};
+
 
 // 处理历史记录恢复
 const handleRestoreHistory = (history: any) => {
   try {
     message.info('正在恢复历史分析结果...');
     
-    // 创建基于历史记录的标签页
-    const restoredTab: AnalysisTab = {
-      id: generateId(),
-      title: `历史-${history.stock_codes.join(',')} (${history.market_type})`,
-      config: {
-        stockCodes: history.stock_codes,
-        marketType: history.market_type,
-        analysisDays: history.analysis_days
-      },
-      createdAt: new Date(),
-      hasStartedAnalysis: true,
-      isAnalyzing: false,
-      analyzedStocks: [], // 这里可以预填充历史数据
-      analysisCompleted: true
-    };
+    // 检查是否已经存在相同历史记录ID的标签页（只有保存到数据库的分析才有ID）
+    let existingTab = null;
+    if (history.id) {
+      // 只有保存到数据库的历史记录才有ID，才需要检查排重
+      existingTab = analysisTabs.value.find(tab => 
+        tab.historyId && tab.historyId === history.id
+      );
+      
+      if (existingTab) {
+        // 如果已存在相同历史记录的标签页，直接切换到该标签页
+        activeTabId.value = existingTab.id;
+        message.success('已切换到现有的历史分析标签页');
+        return;
+      }
+    }
+    
+         // 准备股票代码字符串
+     const stockCodesStr = Array.isArray(history.stock_codes) ? history.stock_codes.join(',') : history.stock_codes;
+     
+     // 解析历史数据中的股票信息
+     const historyStocks: StockInfo[] = [];
+    
+         if (history.stock_codes && Array.isArray(history.stock_codes)) {
+       history.stock_codes.forEach((code: string, index: number) => {
+         const stock: StockInfo = {
+           code: code,
+           name: '', // 历史记录可能没有名称
+           marketType: history.market_type,
+           analysisStatus: 'completed',
+           analysis: '', // 从ai_output或analysis_result中获取
+           score: undefined,
+           recommendation: '',
+           rsi: undefined,
+           ma_trend: '',
+           macd_signal: '',
+           volume_status: '',
+           price: undefined,
+           changePercent: undefined,
+           analysis_date: history.created_at || new Date().toISOString()
+         };
+         
+         // 如果有AI输出，作为分析结果
+         if (history.ai_output) {
+           stock.analysis = history.ai_output;
+         } else if (history.analysis_result) {
+           stock.analysis = history.analysis_result;
+         }
+         
+         // 解析analysis_result中的技术指标数据
+         if (history.analysis_result) {
+           try {
+             let analysisData = history.analysis_result;
+             if (typeof analysisData === 'string') {
+               analysisData = JSON.parse(analysisData);
+             }
+             
+             // 如果analysis_result是数组，找到对应的股票数据
+             if (Array.isArray(analysisData) && analysisData[index]) {
+               const stockData = analysisData[index];
+               stock.name = stockData.name || stock.name;
+               stock.price = stockData.price || stock.price;
+               stock.changePercent = stockData.changePercent || stockData.change_percent || stock.changePercent;
+               stock.price_change = stockData.price_change || stock.price_change;
+               stock.marketValue = stockData.marketValue || stockData.market_value || stock.marketValue;
+               stock.score = stockData.score || stock.score;
+               stock.recommendation = stockData.recommendation || stock.recommendation;
+               stock.rsi = stockData.rsi || stock.rsi;
+               stock.ma_trend = stockData.ma_trend || stock.ma_trend;
+               stock.macd_signal = stockData.macd_signal || stock.macd_signal;
+               stock.volume_status = stockData.volume_status || stock.volume_status;
+               
+               // 如果有图表数据
+               if (stockData.chart_data) {
+                 stock.chart_data = stockData.chart_data;
+               }
+             }
+             // 如果analysis_result是单个对象（单股票分析）
+             else if (!Array.isArray(analysisData) && typeof analysisData === 'object') {
+               stock.name = analysisData.name || stock.name;
+               stock.price = analysisData.price || stock.price;
+               stock.changePercent = analysisData.changePercent || analysisData.change_percent || stock.changePercent;
+               stock.price_change = analysisData.price_change || stock.price_change;
+               stock.marketValue = analysisData.marketValue || analysisData.market_value || stock.marketValue;
+               stock.score = analysisData.score || stock.score;
+               stock.recommendation = analysisData.recommendation || stock.recommendation;
+               stock.rsi = analysisData.rsi || stock.rsi;
+               stock.ma_trend = analysisData.ma_trend || stock.ma_trend;
+               stock.macd_signal = analysisData.macd_signal || stock.macd_signal;
+               stock.volume_status = analysisData.volume_status || stock.volume_status;
+               
+               if (analysisData.chart_data) {
+                 stock.chart_data = analysisData.chart_data;
+               }
+             }
+           } catch (e) {
+             console.warn('解析历史分析结果数据失败:', e);
+           }
+         }
+         
+         // 如果有单独的图表数据字段，优先使用
+         if (history.chart_data) {
+           try {
+             const chartData = typeof history.chart_data === 'string' 
+               ? JSON.parse(history.chart_data) 
+               : history.chart_data;
+             stock.chart_data = chartData;
+           } catch (e) {
+             console.warn('解析历史图表数据失败:', e);
+           }
+         }
+         
+         historyStocks.push(stock);
+       });
+     }
+    
+         // 创建基于历史记录的标签页
+     const restoredTab: AnalysisTab = {
+       id: generateId(),
+       title: `历史-${stockCodesStr} (${history.market_type})`,
+       config: {
+         stockCodes: stockCodesStr,
+         marketType: history.market_type,
+         analysisDays: history.analysis_days || 30
+       },
+       createdAt: new Date(),
+       hasStartedAnalysis: true,
+       isAnalyzing: false,
+       analyzedStocks: historyStocks,
+       analysisCompleted: true,
+       historyId: history.id // 设置历史记录ID用于排重
+     };
     
     analysisTabs.value.push(restoredTab);
     activeTabId.value = restoredTab.id;
     
-    // 关闭用户面板
-    showUserPanel.value = false;
-    
-    message.success(`已恢复历史分析结果到新标签页`);
+    message.success(`已恢复历史分析结果到新标签页 (${historyStocks.length} 只股票)`);
     saveTabs();
     
   } catch (error) {
     console.error('恢复历史记录失败:', error);
+    console.error('历史记录数据:', history);
     message.error('恢复历史记录失败');
   }
 };
@@ -650,12 +727,9 @@ onMounted(async () => {
     // 从API获取配置信息
     const config = await apiService.getConfig();
     
-    // 检查是否需要打开注册面板
+    // 检查是否需要处理注册参数
     if (route.query.register === 'true') {
-      if (config.user_system_enabled) {
-        console.log('用户系统已启用，展开用户面板进行注册');
-        showUserPanel.value = true;
-      } else {
+      if (!config.user_system_enabled) {
         console.log('用户系统未启用，忽略注册参数');
         router.push('/login');
         return;
@@ -702,22 +776,21 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 100vw;
   overflow-x: hidden;
-  padding-bottom: 20px;
   box-sizing: border-box;
+  background-color: #f6f6f6;
 }
 
 .tabs-container {
-  margin-bottom: 1rem;
+  margin: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .tabs-container :deep(.n-card__content) {
   padding: 16px;
 }
 
-.user-panel-card.register-mode {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
+
 
 /* 移动端适配 */
 @media (max-width: 768px) {
