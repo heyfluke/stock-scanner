@@ -259,7 +259,7 @@ const startTabAnalysis = async (tab: AnalysisTab) => {
   
   try {
     const requestData = {
-      stock_codes: tab.config.stockCodes,
+      stock_codes: Array.isArray(tab.config.stockCodes) ? tab.config.stockCodes : [tab.config.stockCodes],
       market_type: tab.config.marketType,
       analysis_days: tab.config.analysisDays
     } as any;
@@ -280,6 +280,8 @@ const startTabAnalysis = async (tab: AnalysisTab) => {
     if (apiConfig.value.apiTimeout) {
       requestData.api_timeout = apiConfig.value.apiTimeout;
     }
+    
+    // console.log('Sending re-analysis request to /api/analyze:', requestData);
     
     const token = localStorage.getItem('token');
     const headers: Record<string, string> = {
@@ -524,8 +526,11 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
 const handleRestartAnalysis = (tabId: string) => {
   const tab = analysisTabs.value.find(t => t.id === tabId);
   if (tab) {
+    // console.log('Restarting analysis for tab:', tabId, 'with config:', tab.config);
     startTabAnalysis(tab);
-  }
+  }/* else {
+    console.error('Tab not found for re-analysis:', tabId);
+  }*/
 };
 
 // 更新API配置
@@ -556,8 +561,9 @@ const handleRestoreHistory = (history: any) => {
       }
     }
     
-         // 准备股票代码字符串
-     const stockCodesStr = Array.isArray(history.stock_codes) ? history.stock_codes.join(',') : history.stock_codes;
+         // 准备股票代码数组
+     const stockCodesArray = Array.isArray(history.stock_codes) ? history.stock_codes : [history.stock_codes];
+     const stockCodesStr = stockCodesArray.join(',');
      
      // 解析历史数据中的股票信息
      const historyStocks: StockInfo[] = [];
@@ -660,7 +666,7 @@ const handleRestoreHistory = (history: any) => {
        id: generateId(),
        title: `历史-${stockCodesStr} (${history.market_type})`,
        config: {
-         stockCodes: stockCodesStr,
+         stockCodes: stockCodesArray,
          marketType: history.market_type,
          analysisDays: history.analysis_days || 30
        },

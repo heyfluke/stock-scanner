@@ -195,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount, h, watch } from 'vue';
+import { ref, onMounted, computed, onBeforeUnmount, h, watch, nextTick } from 'vue';
 import { 
   NLayout, 
   NLayoutContent, 
@@ -745,6 +745,9 @@ async function analyzeStocks() {
   isAnalyzing.value = true;
   analyzedStocks.value = [];
   
+  // 等待状态清理完成
+  await nextTick();
+  
   try {
     // 构建请求参数
     const requestData = {
@@ -784,6 +787,7 @@ async function analyzeStocks() {
     }
     
     // 发送分析请求
+    // console.log('发送到 /api/analyze 的请求数据:', requestData);
     const response = await fetch('/api/analyze', {
       method: 'POST',
       headers,
@@ -798,6 +802,16 @@ async function analyzeStocks() {
       }
       if (response.status === 404) {
         throw new Error('服务器接口未找到，请检查服务是否正常运行');
+      }
+      if (response.status === 422) {
+        // 尝试读取错误详情
+        try {
+          const errorData = await response.json();
+          console.error('422错误详情:', errorData);
+          throw new Error(`请求参数错误: ${errorData.detail || errorData.message || '未知错误'}`);
+        } catch (e) {
+          throw new Error('请求参数错误，请检查输入数据');
+        }
       }
       throw new Error(`服务器响应错误: ${response.status}`);
     }
