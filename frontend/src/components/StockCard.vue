@@ -192,7 +192,14 @@
           </n-switch>
         </div>
       </div>
-      <div ref="chartContainer" class="chart"></div>
+      <div ref="chartContainer" class="chart">
+        <VChart
+          ref="chartRef"
+          :option="chartOption"
+          :autoresize="true"
+          style="height: 100%; width: 100%;"
+        />
+      </div>
     </div>
 
     <n-divider />
@@ -241,6 +248,8 @@ import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
 // 导入原生ECharts
 import * as echarts from 'echarts';
+import { useResizeObserver } from '@vueuse/core';
+import VChart from 'vue-echarts';
 
 const props = defineProps<{
   stock: StockInfo;
@@ -268,6 +277,7 @@ const showBollinger = ref(false);
 const chartInitialized = ref(false);
 const lastChartDataLength = ref(0);
 const lastConfigHash = ref('');
+const chartRef = ref<InstanceType<typeof VChart> | null>(null);
 
 const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
@@ -276,6 +286,28 @@ const isAnalyzing = computed(() => {
 const generateChartOption = () => {
   const chartData: any[] = props.stock.chart_data || [];
   if (chartData.length === 0) return {};
+  
+  // 验证数据完整性
+  if (chartData.length < 2) {
+    console.warn('[StockCard] Insufficient data points for chart:', chartData.length);
+    return {};
+  }
+  
+  // 验证数据格式
+  const isValidData = chartData.every(item => 
+    item && 
+    typeof item === 'object' && 
+    (item.date || item.Date) &&
+    (item.open !== undefined || item.Open !== undefined) &&
+    (item.close !== undefined || item.Close !== undefined) &&
+    (item.high !== undefined || item.High !== undefined) &&
+    (item.low !== undefined || item.Low !== undefined)
+  );
+  
+  if (!isValidData) {
+    console.warn('Invalid chart data format detected');
+    return {};
+  }
   
   // The data is an array of objects, e.g., {date: '...', open: ..., close: ...}
   const dates = chartData.map(item => item.date);
@@ -293,18 +325,27 @@ const generateChartOption = () => {
 
   const calculateMA = (dayCount: number) => {
     const result = [];
-    const closePrices = klineData.map(d => d[1]); // Close price is at index 1
+    const closePrices = klineData.map(d => d[1] ?? 0); // Close price is at index 1, default to 0 if undefined
 
     for (let i = 0, len = closePrices.length; i < len; i++) {
       if (i < dayCount - 1) {
-        result.push('-');
+        result.push(null);
         continue;
       }
       let sum = 0;
+      let validCount = 0;
       for (let j = 0; j < dayCount; j++) {
-        sum += closePrices[i - j];
+        const price = closePrices[i - j];
+        if (price !== null && !isNaN(price)) {
+          sum += price;
+          validCount++;
+        }
       }
-      result.push(parseFloat((sum / dayCount).toFixed(2)));
+      if (validCount > 0) {
+        result.push(parseFloat((sum / validCount).toFixed(2)));
+      } else {
+        result.push(null);
+      }
     }
     return result;
   };
@@ -318,6 +359,23 @@ const generateChartOption = () => {
   const bollUpper = chartData.map(item => item.BB_Upper || null);
   const bollLower = chartData.map(item => item.BB_Lower || null);
 
+  // 验证关键数据数组长度一致性
+  const expectedLength = chartData.length;
+  const dataArrays = [dates, klineData, ma5, ma10, ma20, volumes];
+  const invalidArrays = dataArrays.filter(arr => arr.length !== expectedLength);
+  
+  if (invalidArrays.length > 0) {
+    console.warn('[StockCard] Data length mismatch detected:', {
+      expected: expectedLength,
+      dates: dates.length,
+      kline: klineData.length,
+      ma5: ma5.length,
+      ma10: ma10.length,
+      ma20: ma20.length,
+      volumes: volumes.length
+    });
+  }
+
   // 基础图例数据
   const legendData = ['日K', 'MA5', 'MA10', 'MA20'];
   if (showBollinger.value) {
@@ -330,6 +388,8 @@ const generateChartOption = () => {
       name: '日K',
       type: 'candlestick',
       data: klineData,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
       itemStyle: {
           color: '#ec0000',
           color0: '#00da3c',
@@ -360,6 +420,9 @@ const generateChartOption = () => {
       name: 'MA5',
       type: 'line',
       data: ma5,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      coordinateSystem: 'cartesian2d',
       smooth: true,
       lineStyle: {
         opacity: 0.5
@@ -369,6 +432,9 @@ const generateChartOption = () => {
       name: 'MA10',
       type: 'line',
       data: ma10,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      coordinateSystem: 'cartesian2d',
       smooth: true,
       lineStyle: {
         opacity: 0.5
@@ -378,6 +444,9 @@ const generateChartOption = () => {
       name: 'MA20',
       type: 'line',
       data: ma20,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      coordinateSystem: 'cartesian2d',
       smooth: true,
       lineStyle: {
         opacity: 0.5
@@ -388,6 +457,7 @@ const generateChartOption = () => {
       type: 'bar',
       xAxisIndex: 1,
       yAxisIndex: 1,
+      coordinateSystem: 'cartesian2d',
       data: volumes.map(item => item[1]),
       itemStyle: {
         color: ({ dataIndex }: { dataIndex: number }) => (volumes[dataIndex][2] === 1 ? '#ec0000' : '#00da3c')
@@ -402,6 +472,9 @@ const generateChartOption = () => {
         name: 'BOLL中轨',
         type: 'line',
         data: bollMiddle,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        coordinateSystem: 'cartesian2d',
         smooth: true,
         lineStyle: {
           color: '#FFA500',
@@ -413,6 +486,9 @@ const generateChartOption = () => {
         name: 'BOLL上轨',
         type: 'line',
         data: bollUpper,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        coordinateSystem: 'cartesian2d',
         smooth: true,
         lineStyle: {
           color: '#FF6B6B',
@@ -424,6 +500,9 @@ const generateChartOption = () => {
         name: 'BOLL下轨',
         type: 'line',
         data: bollLower,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        coordinateSystem: 'cartesian2d',
         smooth: true,
         lineStyle: {
           color: '#4ECDC4',
@@ -435,6 +514,7 @@ const generateChartOption = () => {
   }
 
   return {
+    animation: false,
     tooltip: {
       trigger: 'axis',
       axisPointer: {
@@ -465,8 +545,7 @@ const generateChartOption = () => {
         boundaryGap: false,
         axisLine: { onZero: false },
         splitLine: { show: false },
-        min: 'dataMin' as const,
-        max: 'dataMax' as const
+        gridIndex: 0
       },
       {
         type: 'category' as const,
@@ -477,19 +556,20 @@ const generateChartOption = () => {
         axisLine: { onZero: false },
         axisTick: { show: false },
         splitLine: { show: false },
-        axisLabel: { show: false },
-        min: 'dataMin' as const,
-        max: 'dataMax' as const
+        axisLabel: { show: false }
       }
     ],
     yAxis: [
       {
+        type: 'value' as const,
         scale: true,
+        gridIndex: 0,
         splitArea: {
           show: true
         }
       },
       {
+        type: 'value' as const,
         scale: true,
         gridIndex: 1,
         splitNumber: 2,
@@ -501,18 +581,14 @@ const generateChartOption = () => {
     ],
     dataZoom: [
       {
-        type: 'inside' as const,
-        xAxisIndex: [0, 1],
-        start: 0,
-        end: 100
-      },
-      {
+        type: 'slider' as const,
         show: true,
         xAxisIndex: [0, 1],
-        type: 'slider' as const,
-        top: '85%',
         start: 0,
-        end: 100
+        end: 100,
+        top: '85%',
+        height: 20,
+        throttle: 300
       }
     ],
     series: series
@@ -527,7 +603,7 @@ const getConfigHash = () => {
 };
 
 // 更新图表
-const updateChart = async (forceResize = false) => {
+const updateChart = async () => {
   if (!props.stock.chart_data || props.stock.chart_data.length === 0) return;
   
   const currentHash = getConfigHash();
@@ -535,74 +611,55 @@ const updateChart = async (forceResize = false) => {
   // 只有在配置真正改变时才重新生成图表
   if (currentHash !== lastConfigHash.value) {
     // 生成新配置
-    chartOption.value = generateChartOption();
-    lastConfigHash.value = currentHash;
-    
-    // 等待DOM更新完成
-    await nextTick();
-    
-    // 确保图表容器存在
-    if (chartContainer.value) {
-      // 如果图表实例已存在，先销毁
-      if (chartInstance.value) {
-        chartInstance.value.dispose();
-        chartInstance.value = null;
-      }
-      
-      // 创建新的图表实例
-      chartInstance.value = echarts.init(chartContainer.value);
-      // 设置新配置，确保不合并
-      chartInstance.value.setOption(chartOption.value, { notMerge: true });
+    const newOption = generateChartOption();
+    if (!newOption || Object.keys(newOption).length === 0) {
+      console.warn('Failed to generate chart option');
+      return;
     }
-  }
-  
-  // 只在必要时调用 resize（如首次渲染或强制要求）
-  if (forceResize && chartInstance.value) {
-    await nextTick();
-    chartInstance.value.resize();
-    console.log(`[StockCard] Chart resized for stock: ${props.stock.code}`);
+    
+    chartOption.value = newOption;
+    lastConfigHash.value = currentHash;
   }
 };
 
-// 监听图表数据变化 - 只在数据真正改变时更新
+// 监听图表数据变化
 watch(() => props.stock.chart_data, (newChartData) => {
   if (newChartData && newChartData.length > 0) {
-    // 只有在数据长度变化时才更新图表（避免重复渲染）
-    if (newChartData.length !== lastChartDataLength.value) {
-      const needsResize = !chartInitialized.value;
-      updateChart(needsResize);
+    // 如果图表未初始化，则表示这是第一次获取数据。
+    const needsInit = !chartInitialized.value;
+    updateChart();
+    if (needsInit) {
       chartInitialized.value = true;
-      lastChartDataLength.value = newChartData.length;
     }
   }
-}, { deep: false, immediate: true }); // 改为 deep: false 避免深度监听
+}, { deep: false });
 
 // 监听布林带显示状态变化
 watch(() => showBollinger.value, () => {
   if (props.stock.chart_data && props.stock.chart_data.length > 0) {
-    updateChart(false);
+    updateChart();
   }
 });
 
 // 添加组件挂载后的图表初始化
 onMounted(async () => {
-  // 等待DOM完全渲染
   await nextTick();
-  
-  // 如果已经有图表数据，立即更新图表
-  if (props.stock.chart_data && props.stock.chart_data.length > 0 && !chartInitialized.value) {
-    updateChart(true); // 首次挂载时强制 resize
-    chartInitialized.value = true;
+  // 如果组件挂载时数据已存在，则绘制图表
+  if (props.stock.chart_data && props.stock.chart_data.length > 0) {
+    updateChart();
   }
+  
+  // 添加窗口resize监听（可选，因为autoresize已启用）
+  useResizeObserver(chartContainer, () => {
+    if (chartRef.value) {
+      chartRef.value.resize();
+    }
+  });
 });
 
-// 在组件卸载时销毁图表实例
+// 清理
 onBeforeUnmount(() => {
-  if (chartInstance.value) {
-    chartInstance.value.dispose();
-    chartInstance.value = null;
-    console.log(`[StockCard] Chart disposed for stock: ${props.stock.code}`);
-  }
+  // 无需手动dispose，vue-echarts会处理
 });
 
 const lastAnalysisLength = ref(0);
