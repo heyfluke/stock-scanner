@@ -182,7 +182,6 @@
           <n-switch
             v-model:value="showBollinger"
             size="small"
-            @update:value="() => updateChart(false)"
           >
             <template #checked>
               BOLL
@@ -193,12 +192,7 @@
           </n-switch>
         </div>
       </div>
-      <v-chart
-        class="chart"
-        :option="chartOption"
-        autoresize
-        :ref="el => { chartInstance = el }"
-      />
+      <div ref="chartContainer" class="chart"></div>
     </div>
 
     <n-divider />
@@ -245,31 +239,8 @@ import {
 import html2canvas from 'html2canvas';
 import { parseMarkdown } from '@/utils';
 import type { StockInfo } from '@/types';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { CandlestickChart, LineChart } from 'echarts/charts';
-import {
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  LegendComponent,
-  DataZoomComponent,
-  MarkAreaComponent
-} from 'echarts/components';
-import VChart, { THEME_KEY } from 'vue-echarts';
-import type { EChartsOption } from 'echarts';
-
-use([
-  CanvasRenderer,
-  CandlestickChart,
-  LineChart,
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  LegendComponent,
-  DataZoomComponent,
-  MarkAreaComponent
-]);
+// 导入原生ECharts
+import * as echarts from 'echarts';
 
 const props = defineProps<{
   stock: StockInfo;
@@ -289,14 +260,18 @@ const sharing = ref(false);
 const exporting = ref(false);
 const isFavorite = ref(false);
 
-const chartInstance = ref<any>(null);
+// 图表相关变量
+const chartContainer = ref<HTMLElement | null>(null);
+const chartInstance = ref<echarts.ECharts | null>(null);
+const chartOption = ref<echarts.EChartsOption>({});
 const showBollinger = ref(false);
+const chartInitialized = ref(false);
+const lastChartDataLength = ref(0);
+const lastConfigHash = ref('');
 
 const isAnalyzing = computed(() => {
   return props.stock.analysisStatus === 'analyzing';
 });
-
-const chartOption = ref<EChartsOption>({});
 
 const generateChartOption = () => {
   const chartData: any[] = props.stock.chart_data || [];
@@ -541,11 +516,8 @@ const generateChartOption = () => {
       }
     ],
     series: series
-  } as EChartsOption;
+  } as echarts.EChartsOption;
 };
-
-// 缓存上次生成的图表配置的哈希值，避免重复生成
-const lastConfigHash = ref('');
 
 // 生成简单的配置哈希来判断是否需要更新
 const getConfigHash = () => {
@@ -556,33 +528,41 @@ const getConfigHash = () => {
 
 // 更新图表
 const updateChart = async (forceResize = false) => {
-  if (props.stock.chart_data && props.stock.chart_data.length > 0) {
-    const currentHash = getConfigHash();
+  if (!props.stock.chart_data || props.stock.chart_data.length === 0) return;
+  
+  const currentHash = getConfigHash();
+  
+  // 只有在配置真正改变时才重新生成图表
+  if (currentHash !== lastConfigHash.value) {
+    // 生成新配置
+    chartOption.value = generateChartOption();
+    lastConfigHash.value = currentHash;
     
-         // 只有在配置真正改变时才重新生成图表
-     if (currentHash !== lastConfigHash.value) {
-       chartOption.value = generateChartOption();
-       lastConfigHash.value = currentHash;
-     }
+    // 等待DOM更新完成
+    await nextTick();
     
-    // 只在必要时调用 resize（如首次渲染或强制要求）
-    if (forceResize) {
-      await nextTick();
+    // 确保图表容器存在
+    if (chartContainer.value) {
+      // 如果图表实例已存在，先销毁
       if (chartInstance.value) {
-        try {
-          chartInstance.value.resize();
-          console.log(`[StockCard] Chart resized for stock: ${props.stock.code}`);
-        } catch (error) {
-          console.warn(`[StockCard] Chart resize failed for stock: ${props.stock.code}`, error);
-        }
+        chartInstance.value.dispose();
+        chartInstance.value = null;
       }
+      
+      // 创建新的图表实例
+      chartInstance.value = echarts.init(chartContainer.value);
+      // 设置新配置，确保不合并
+      chartInstance.value.setOption(chartOption.value, { notMerge: true });
     }
   }
+  
+  // 只在必要时调用 resize（如首次渲染或强制要求）
+  if (forceResize && chartInstance.value) {
+    await nextTick();
+    chartInstance.value.resize();
+    console.log(`[StockCard] Chart resized for stock: ${props.stock.code}`);
+  }
 };
-
-// 添加标记来跟踪是否已初始化
-const chartInitialized = ref(false);
-const lastChartDataLength = ref(0);
 
 // 监听图表数据变化 - 只在数据真正改变时更新
 watch(() => props.stock.chart_data, (newChartData) => {
@@ -597,6 +577,13 @@ watch(() => props.stock.chart_data, (newChartData) => {
   }
 }, { deep: false, immediate: true }); // 改为 deep: false 避免深度监听
 
+// 监听布林带显示状态变化
+watch(() => showBollinger.value, () => {
+  if (props.stock.chart_data && props.stock.chart_data.length > 0) {
+    updateChart(false);
+  }
+});
+
 // 添加组件挂载后的图表初始化
 onMounted(async () => {
   // 等待DOM完全渲染
@@ -606,6 +593,15 @@ onMounted(async () => {
   if (props.stock.chart_data && props.stock.chart_data.length > 0 && !chartInitialized.value) {
     updateChart(true); // 首次挂载时强制 resize
     chartInitialized.value = true;
+  }
+});
+
+// 在组件卸载时销毁图表实例
+onBeforeUnmount(() => {
+  if (chartInstance.value) {
+    chartInstance.value.dispose();
+    chartInstance.value = null;
+    console.log(`[StockCard] Chart disposed for stock: ${props.stock.code}`);
   }
 });
 
@@ -954,6 +950,7 @@ function smoothScrollToBottom(element: HTMLElement) {
   });
 }
 
+// 获取图表数据URL
 const getChartDataURL = () => {
   if (chartInstance.value) {
     // 使用 ECharts 的 API 生成图片
