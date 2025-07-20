@@ -60,7 +60,7 @@ python manage_migrations.py migrate --latest --no-backup
 > [!NOTE]
 > 对于在 **Synology NAS** 等特定设备上的部署，请参考我们的 [Synology NAS 部署指南](./docs/README.synology.md)。
 
-![Stock Scanner 示例图片](./docs/stock-scanner-sample.png)
+![Stock Scanner 演示视频](./docs/stock-scanner-demo.mp4)
 
 ```
 # 拉取最新版本
