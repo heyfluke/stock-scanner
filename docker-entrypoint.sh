@@ -18,30 +18,37 @@ wait_for_service() {
 run_database_migration() {
     echo "🔄 开始数据库迁移..."
     
-    # 检查数据库连接
-    python3 -c "
+    # Python 内部循环重试数据库连接
+    python3 - <<'EOF'
 import os
 import sys
+import time
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
 database_url = os.getenv('DATABASE_URL', 'sqlite:///./data/stock_scanner.db')
 print(f'数据库连接: {database_url}')
 
-if database_url.startswith('postgresql://'):
+max_retries = 10
+for attempt in range(1, max_retries + 1):
     try:
-        engine = create_engine(database_url)
-        with engine.connect() as conn:
-            result = conn.execute(text('SELECT version()'))
-            version = result.fetchone()[0]
-            print(f'PostgreSQL 版本: {version}')
-        print('✅ 数据库连接成功')
+        if database_url.startswith('postgresql://'):
+            engine = create_engine(database_url)
+            with engine.connect() as conn:
+                result = conn.execute(text('SELECT version()'))
+                version = result.fetchone()[0]
+                print(f'PostgreSQL 版本: {version}')
+            print('✅ 数据库连接成功')
+        else:
+            print('使用 SQLite 数据库')
+        break
     except Exception as e:
-        print(f'❌ 数据库连接失败: {e}')
-        sys.exit(1)
-else:
-    print('使用 SQLite 数据库')
-"
+        print(f'❌ 数据库连接失败（第{attempt}次）：{e}')
+        if attempt == max_retries:
+            print('❌ 已达到最大重试次数，退出')
+            sys.exit(1)
+        time.sleep(3)
+EOF
     
     if [ $? -ne 0 ]; then
         echo "❌ 数据库连接检查失败"
