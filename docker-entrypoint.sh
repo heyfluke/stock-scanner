@@ -1,19 +1,5 @@
 #!/bin/bash
 
-# 等待函数
-wait_for_service() {
-    local host=$1
-    local port=$2
-    local service_name=$3
-    
-    echo "⏳ 等待 $service_name 服务启动..."
-    while ! nc -z "$host" "$port" 2>/dev/null; do
-        echo "   $service_name 还未就绪，等待中..."
-        sleep 2
-    done
-    echo "✅ $service_name 服务已就绪"
-}
-
 # 数据库迁移函数
 run_database_migration() {
     echo "🔄 开始数据库迁移..."
@@ -95,18 +81,6 @@ export PYTHONPATH="/app:$PYTHONPATH"
 # 检查是否启用用户系统
 if [ "${ENABLE_USER_SYSTEM:-true}" = "true" ]; then
     echo "👤 用户系统已启用"
-    
-    # 如果使用PostgreSQL，等待数据库服务
-    if [[ "${DATABASE_URL:-}" =~ ^postgresql:// ]]; then
-        # 从DATABASE_URL提取主机和端口
-        DB_HOST=$(echo "$DATABASE_URL" | sed -n 's/.*@\([^:]*\):.*/\1/p')
-        DB_PORT=$(echo "$DATABASE_URL" | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
-        
-        if [ -n "$DB_HOST" ] && [ -n "$DB_PORT" ]; then
-            wait_for_service "$DB_HOST" "$DB_PORT" "PostgreSQL"
-        fi
-    fi
-    
     # 运行数据库迁移
     run_database_migration
 else
