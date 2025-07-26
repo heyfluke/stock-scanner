@@ -35,11 +35,24 @@ class DatabaseMigrator:
         """获取当前数据库版本"""
         try:
             with Session(self.engine) as session:
-                # 检查是否存在版本表
-                result = session.execute(text("""
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' AND name='database_version'
-                """)).first()
+                # 检测数据库类型
+                database_url = str(self.engine.url)
+                
+                if database_url.startswith('postgresql'):
+                    # PostgreSQL 语法
+                    # 检查是否存在版本表
+                    result = session.execute(text("""
+                        SELECT table_name FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'database_version'
+                    """)).first()
+                else:
+                    # SQLite 语法
+                    # 检查是否存在版本表
+                    result = session.execute(text("""
+                        SELECT name FROM sqlite_master 
+                        WHERE type='table' AND name='database_version'
+                    """)).first()
                 
                 if not result:
                     # 版本表不存在，检查是否有基础表来判断版本
@@ -56,53 +69,115 @@ class DatabaseMigrator:
     def _detect_existing_version(self, session: Session) -> int:
         """检测现有数据库的版本"""
         try:
-            # 检查是否存在基础表
-            tables_result = session.execute(text("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name IN ('users', 'user_favorites', 'analysis_history')
-            """)).all()
+            # 检测数据库类型
+            database_url = str(self.engine.url)
             
-            existing_tables = [row[0] for row in tables_result]
-            
-            # 如果存在基础表，说明是版本1
-            if 'users' in existing_tables and 'user_favorites' in existing_tables and 'analysis_history' in existing_tables:
-                logger.info("检测到现有数据库包含基础表，推断为版本1")
-                return 1
-            
-            # 检查是否有对话表
-            conv_tables_result = session.execute(text("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name IN ('conversations', 'conversation_messages')
-            """)).all()
-            
-            conv_tables = [row[0] for row in conv_tables_result]
-            
-            if 'conversations' in conv_tables and 'conversation_messages' in conv_tables:
-                logger.info("检测到现有数据库包含对话表，推断为版本2")
-                return 2
-            
-            # 检查是否有用户设置表
-            settings_result = session.execute(text("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name = 'user_settings'
-            """)).first()
-            
-            if settings_result:
-                logger.info("检测到现有数据库包含用户设置表，推断为版本3")
-                return 3
-            
-            # 检查分析历史表是否有新字段
-            try:
-                columns_result = session.execute(text("PRAGMA table_info(analysis_history)")).all()
-                columns = [row[1] for row in columns_result]
+            if database_url.startswith('postgresql'):
+                # PostgreSQL 语法
+                # 检查是否存在基础表
+                tables_result = session.execute(text("""
+                    SELECT table_name FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name IN ('users', 'user_favorites', 'analysis_history')
+                """)).all()
                 
-                if 'ai_output' in columns and 'chart_data' in columns:
-                    logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
-                    return 4
-            except:
-                pass
-            
-            return 0
+                existing_tables = [row[0] for row in tables_result]
+                
+                # 如果存在基础表，说明是版本1
+                if 'users' in existing_tables and 'user_favorites' in existing_tables and 'analysis_history' in existing_tables:
+                    logger.info("检测到现有数据库包含基础表，推断为版本1")
+                    return 1
+                
+                # 检查是否有对话表
+                conv_tables_result = session.execute(text("""
+                    SELECT table_name FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name IN ('conversations', 'conversation_messages')
+                """)).all()
+                
+                conv_tables = [row[0] for row in conv_tables_result]
+                
+                if 'conversations' in conv_tables and 'conversation_messages' in conv_tables:
+                    logger.info("检测到现有数据库包含对话表，推断为版本2")
+                    return 2
+                
+                # 检查是否有用户设置表
+                settings_result = session.execute(text("""
+                    SELECT table_name FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'user_settings'
+                """)).first()
+                
+                if settings_result:
+                    logger.info("检测到现有数据库包含用户设置表，推断为版本3")
+                    return 3
+                
+                # 检查分析历史表是否有新字段
+                try:
+                    columns_result = session.execute(text("""
+                        SELECT column_name FROM information_schema.columns 
+                        WHERE table_name = 'analysis_history' 
+                        AND table_schema = 'public'
+                    """)).all()
+                    
+                    columns = [row[0] for row in columns_result]
+                    
+                    if 'ai_output' in columns and 'chart_data' in columns:
+                        logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                        return 4
+                except:
+                    pass
+                
+                return 0
+            else:
+                # SQLite 语法
+                # 检查是否存在基础表
+                tables_result = session.execute(text("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name IN ('users', 'user_favorites', 'analysis_history')
+                """)).all()
+                
+                existing_tables = [row[0] for row in tables_result]
+                
+                # 如果存在基础表，说明是版本1
+                if 'users' in existing_tables and 'user_favorites' in existing_tables and 'analysis_history' in existing_tables:
+                    logger.info("检测到现有数据库包含基础表，推断为版本1")
+                    return 1
+                
+                # 检查是否有对话表
+                conv_tables_result = session.execute(text("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name IN ('conversations', 'conversation_messages')
+                """)).all()
+                
+                conv_tables = [row[0] for row in conv_tables_result]
+                
+                if 'conversations' in conv_tables and 'conversation_messages' in conv_tables:
+                    logger.info("检测到现有数据库包含对话表，推断为版本2")
+                    return 2
+                
+                # 检查是否有用户设置表
+                settings_result = session.execute(text("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name = 'user_settings'
+                """)).first()
+                
+                if settings_result:
+                    logger.info("检测到现有数据库包含用户设置表，推断为版本3")
+                    return 3
+                
+                # 检查分析历史表是否有新字段
+                try:
+                    columns_result = session.execute(text("PRAGMA table_info(analysis_history)")).all()
+                    columns = [row[1] for row in columns_result]
+                    
+                    if 'ai_output' in columns and 'chart_data' in columns:
+                        logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                        return 4
+                except:
+                    pass
+                
+                return 0
             
         except Exception as e:
             logger.warning(f"检测现有版本失败: {e}")
@@ -112,15 +187,30 @@ class DatabaseMigrator:
         """创建版本表"""
         try:
             with Session(self.engine) as session:
-                session.execute(text("""
-                    CREATE TABLE IF NOT EXISTS database_version (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        version INTEGER NOT NULL,
-                        migration_name TEXT NOT NULL,
-                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        description TEXT
-                    )
-                """))
+                # 检测数据库类型
+                database_url = str(self.engine.url)
+                if database_url.startswith('postgresql'):
+                    # PostgreSQL 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS database_version (
+                            id SERIAL PRIMARY KEY,
+                            version INTEGER NOT NULL,
+                            migration_name TEXT NOT NULL,
+                            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            description TEXT
+                        )
+                    """))
+                else:
+                    # SQLite 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS database_version (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            version INTEGER NOT NULL,
+                            migration_name TEXT NOT NULL,
+                            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            description TEXT
+                        )
+                    """))
                 session.commit()
                 logger.info("版本表创建成功")
         except Exception as e:
@@ -308,28 +398,59 @@ class DatabaseMigrator:
         """迁移到版本4：为分析历史添加AI输出和图表数据字段"""
         try:
             with Session(self.engine) as session:
-                # 检查字段是否已存在
-                result = session.execute(text("""
-                    PRAGMA table_info(analysis_history)
-                """)).all()
+                # 检测数据库类型
+                database_url = str(self.engine.url)
                 
-                columns = [row[1] for row in result]
-                
-                # 添加ai_output字段
-                if 'ai_output' not in columns:
-                    session.execute(text("""
-                        ALTER TABLE analysis_history 
-                        ADD COLUMN ai_output TEXT
-                    """))
-                    logger.info("添加ai_output字段")
-                
-                # 添加chart_data字段
-                if 'chart_data' not in columns:
-                    session.execute(text("""
-                        ALTER TABLE analysis_history 
-                        ADD COLUMN chart_data TEXT
-                    """))
-                    logger.info("添加chart_data字段")
+                if database_url.startswith('postgresql'):
+                    # PostgreSQL 语法
+                    # 检查字段是否已存在
+                    result = session.execute(text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'analysis_history' 
+                        AND table_schema = 'public'
+                    """)).all()
+                    
+                    columns = [row[0] for row in result]
+                    
+                    # 添加ai_output字段
+                    if 'ai_output' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN ai_output TEXT
+                        """))
+                        logger.info("添加ai_output字段")
+                    
+                    # 添加chart_data字段
+                    if 'chart_data' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN chart_data TEXT
+                        """))
+                        logger.info("添加chart_data字段")
+                else:
+                    # SQLite 语法
+                    result = session.execute(text("""
+                        PRAGMA table_info(analysis_history)
+                    """)).all()
+                    
+                    columns = [row[1] for row in result]
+                    
+                    # 添加ai_output字段
+                    if 'ai_output' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN ai_output TEXT
+                        """))
+                        logger.info("添加ai_output字段")
+                    
+                    # 添加chart_data字段
+                    if 'chart_data' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN chart_data TEXT
+                        """))
+                        logger.info("添加chart_data字段")
                 
                 session.commit()
             
