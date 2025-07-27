@@ -9,21 +9,20 @@
     />
     
     <n-layout class="main-layout">
-      <n-layout-content class="main-content mobile-content-container" :class="{ 'register-mode-content': isRegisterMode }">
+              <n-layout-content class="main-content mobile-content-container">
+          
+          <!-- 市场时间显示 -->
+          <MarketTimeDisplay :is-mobile="isMobile" />
         
-        <!-- 市场时间显示 -->
-        <MarketTimeDisplay :is-mobile="isMobile" v-if="!isRegisterMode" />
-        
-        <!-- 用户面板（可折叠） -->
-        <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow" :class="{ 'register-mode': isRegisterMode }">
+        <!-- 用户面板（仅显示已登录用户信息） -->
+        <n-card class="user-panel-card mobile-card mobile-card-spacing mobile-shadow" v-if="isLoggedIn">
           <template #header>
             <n-space align="center" justify="space-between">
               <n-space align="center">
                 <n-icon :component="PersonIcon" />
-                <span>{{ isRegisterMode ? '用户注册' : '用户中心' }}</span>
+                <span>用户中心</span>
               </n-space>
               <n-button 
-                v-if="!isRegisterMode"
                 text 
                 @click="toggleUserPanel"
                 :style="{ transform: showUserPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }"
@@ -33,9 +32,8 @@
             </n-space>
           </template>
           
-          <n-collapse-transition :show="showUserPanel || isRegisterMode">
+          <n-collapse-transition :show="showUserPanel">
             <UserPanel 
-            :default-tab="route.query.register === 'true' ? 'register' : 'login'" 
             @restore-history="handleRestoreHistory"
           />
           </n-collapse-transition>
@@ -43,7 +41,6 @@
         
         <!-- API配置面板 -->
         <ApiConfigPanel
-          v-if="!isRegisterMode"
           :default-api-url="defaultApiUrl"
           :default-api-model="defaultApiModel"
           :default-api-timeout="defaultApiTimeout"
@@ -51,7 +48,7 @@
         />
         
         <!-- 主要内容 -->
-        <n-card class="analysis-container mobile-card mobile-card-spacing mobile-shadow" v-if="!isRegisterMode">
+        <n-card class="analysis-container mobile-card mobile-card-spacing mobile-shadow">
           
           <n-grid cols="1 xl:24" :x-gap="16" :y-gap="16" responsive="screen">
             <!-- 左侧配置区域 -->
@@ -258,6 +255,7 @@ const showAnnouncementBanner = ref(true);
 
 // 用户面板状态
 const showUserPanel = ref(false);
+const isLoggedIn = ref(false);
 const route = useRoute();
 
 // 股票分析配置
@@ -293,10 +291,7 @@ const isMobile = computed(() => {
   return window.innerWidth <= 768;
 });
 
-// 检测是否为注册模式
-const isRegisterMode = computed(() => {
-  return route.query.register === 'true';
-});
+
 
 // 监听窗口大小变化
 function handleResize() {
@@ -1025,18 +1020,18 @@ onMounted(async () => {
     // 从API获取配置信息
     const config = await apiService.getConfig();
     
-    // 检查是否需要打开注册面板
-    if (route.query.register === 'true') {
-      // 安全检查：只有在用户系统启用时才允许注册访问
-      if (config.user_system_enabled) {
-        console.log('用户系统已启用，展开用户面板进行注册');
-        showUserPanel.value = true;
-      } else {
-        console.log('用户系统未启用，忽略注册参数');
-        // 重定向到登录页
-        router.push('/login');
-        return;
+    // 检查登录状态
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const isAuth = await apiService.checkAuth();
+        isLoggedIn.value = isAuth;
+      } catch (error) {
+        console.error('检查登录状态失败:', error);
+        isLoggedIn.value = false;
       }
+    } else {
+      isLoggedIn.value = false;
     }
     
     if (config.default_api_url) {

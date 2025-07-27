@@ -72,13 +72,12 @@
         :native-scrollbar="false"
       >
         <!-- 用户中心部分 -->
-        <div class="sidebar-section">
+        <div class="sidebar-section" v-if="isLoggedIn">
           <div class="section-header">
             <n-icon :component="PersonIcon" />
             <span>用户中心</span>
           </div>
           <UserPanel 
-            :default-tab="route.query.register === 'true' ? 'register' : 'login'" 
             @restore-history="handleRestoreHistory"
           />
         </div>
@@ -123,6 +122,7 @@ import { useRoute } from 'vue-router';
 import UserPanel from './UserPanel.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
 import { updateMarketTimeInfo } from '@/utils';
+import { apiService } from '@/services/api';
 import type { MarketTimeInfo, ApiConfig } from '@/types';
 
 // Props
@@ -144,6 +144,7 @@ const route = useRoute();
 
 // 状态
 const showSidebar = ref(false);
+const isLoggedIn = ref(false);
 const marketTime = ref<MarketTimeInfo>({
   currentTime: '',
   cnMarket: { isOpen: false, nextTime: '' },
@@ -223,8 +224,22 @@ const handleResize = () => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('resize', handleResize);
+  
+  // 检查登录状态
+  const token = localStorage.getItem('token');
+  if (token) {
+    try {
+      const isAuth = await apiService.checkAuth();
+      isLoggedIn.value = isAuth;
+    } catch (error) {
+      console.error('检查登录状态失败:', error);
+      isLoggedIn.value = false;
+    }
+  } else {
+    isLoggedIn.value = false;
+  }
   
   // 初始化市场时间并开始定时更新
   updateMarketTimeData();

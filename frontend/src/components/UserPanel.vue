@@ -13,68 +13,18 @@
     
     <!-- 用户未登录状态 -->
     <div v-else-if="!isLoggedIn" class="auth-section">
-      <n-tabs type="segment" animated v-model:value="activeTab">
-        <n-tab-pane name="login" tab="登录">
-          <n-form ref="loginFormRef" :model="loginForm" :rules="loginRules">
-            <n-form-item path="username" label="用户名">
-              <n-input v-model:value="loginForm.username" placeholder="请输入用户名" />
-            </n-form-item>
-            <n-form-item path="password" label="密码">
-              <n-input 
-                v-model:value="loginForm.password" 
-                type="password" 
-                placeholder="请输入密码" 
-                @keyup.enter="handleLogin"
-              />
-            </n-form-item>
-            <n-button 
-              type="primary" 
-              block 
-              :loading="loginLoading" 
-              @click="handleLogin"
-            >
-              登录
+      <n-empty description="请先登录">
+        <template #extra>
+          <n-space>
+            <n-button type="primary" @click="goToLogin">
+              去登录
             </n-button>
-          </n-form>
-        </n-tab-pane>
-        
-        <n-tab-pane name="register" tab="注册">
-          <n-form ref="registerFormRef" :model="registerForm" :rules="registerRules">
-            <n-form-item path="username" label="用户名">
-              <n-input v-model:value="registerForm.username" placeholder="请输入用户名" />
-            </n-form-item>
-            <n-form-item path="display_name" label="显示名称">
-              <n-input v-model:value="registerForm.display_name" placeholder="请输入显示名称（可选）" />
-            </n-form-item>
-            <n-form-item path="email" label="邮箱">
-              <n-input v-model:value="registerForm.email" placeholder="请输入邮箱（可选）" />
-            </n-form-item>
-            <n-form-item path="password" label="密码">
-              <n-input 
-                v-model:value="registerForm.password" 
-                type="password" 
-                placeholder="请输入密码" 
-              />
-            </n-form-item>
-            <n-form-item path="confirmPassword" label="确认密码">
-              <n-input 
-                v-model:value="registerForm.confirmPassword" 
-                type="password" 
-                placeholder="请再次输入密码" 
-                @keyup.enter="handleRegister"
-              />
-            </n-form-item>
-            <n-button 
-              type="primary" 
-              block 
-              :loading="registerLoading" 
-              @click="handleRegister"
-            >
-              注册
+            <n-button @click="goToRegister">
+              去注册
             </n-button>
-          </n-form>
-        </n-tab-pane>
-      </n-tabs>
+          </n-space>
+        </template>
+      </n-empty>
     </div>
 
     <!-- 用户已登录状态 -->
@@ -454,6 +404,16 @@ const handleLogout = () => {
   apiService.logout();
   // 使用Vue Router跳转到登录页
   router.push('/login');
+};
+
+// 跳转到登录页
+const goToLogin = () => {
+  router.push('/login');
+};
+
+// 跳转到注册页
+const goToRegister = () => {
+  router.push('/login?register=true');
 };
 
 // 移除收藏

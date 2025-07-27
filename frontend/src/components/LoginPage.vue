@@ -27,8 +27,8 @@
         <div class="login-logo">
           <n-icon :component="BarChartIcon" color="#2080f0" size="36" class="logo-icon" />
         </div>
-        <h1 class="login-title">股票AI分析系统</h1>
-        <p class="login-subtitle">使用AI技术分析股票市场趋势</p>
+        <h1 class="login-title">{{ isLoginMode ? '股票AI分析系统' : '用户注册' }}</h1>
+        <p class="login-subtitle">{{ isLoginMode ? '使用AI技术分析股票市场趋势' : '创建您的账户' }}</p>
       </div>
       
       <n-form
@@ -41,7 +41,7 @@
         class="login-form"
       >
         <!-- 用户名输入 -->
-        <n-form-item path="username" v-if="systemConfig.user_system_enabled">
+        <n-form-item path="username">
           <n-input
             v-model:value="formValue.username"
             placeholder="请输入用户名（试试: demo）"
@@ -54,12 +54,57 @@
           </n-input>
         </n-form-item>
         
+        <!-- 注册模式下的额外字段 -->
+        <template v-if="!isLoginMode">
+          <n-form-item path="display_name">
+            <n-input
+              v-model:value="formValue.display_name"
+              placeholder="请输入显示名称（可选）"
+              size="large"
+              class="login-input"
+            >
+              <template #prefix>
+                <n-icon :component="PersonIcon" />
+              </template>
+            </n-input>
+          </n-form-item>
+          
+          <n-form-item path="email">
+            <n-input
+              v-model:value="formValue.email"
+              placeholder="请输入邮箱（可选）"
+              size="large"
+              class="login-input"
+            >
+              <template #prefix>
+                <n-icon :component="MailIcon" />
+              </template>
+            </n-input>
+          </n-form-item>
+        </template>
+        
         <n-form-item path="password">
           <n-input
             v-model:value="formValue.password"
             type="password"
             :placeholder="systemConfig.user_system_enabled ? '请输入密码' : '请输入访问密码'"
-            @keyup.enter="handleLogin"
+            @keyup.enter="isLoginMode ? handleLogin : handleRegister"
+            size="large"
+            class="login-input"
+          >
+            <template #prefix>
+              <n-icon :component="LockClosedIcon" />
+            </template>
+          </n-input>
+        </n-form-item>
+        
+        <!-- 注册模式下的确认密码 -->
+        <n-form-item path="confirmPassword" v-if="!isLoginMode">
+          <n-input
+            v-model:value="formValue.confirmPassword"
+            type="password"
+            placeholder="请再次输入密码"
+            @keyup.enter="handleRegister"
             size="large"
             class="login-input"
           >
@@ -70,10 +115,10 @@
         </n-form-item>
         
         <!-- 注册提示 -->
-        <div class="register-link" v-if="systemConfig.user_system_enabled">
+        <div class="register-link">
           <n-text depth="3">还没有账号？</n-text>
-          <n-button text type="primary" @click="openRegister">
-            立即注册
+          <n-button text type="primary" @click="toggleMode">
+            {{ isLoginMode ? '立即注册' : '返回登录' }}
           </n-button>
         </div>
         
@@ -83,10 +128,10 @@
             size="large"
             block
             :loading="loading"
-            @click="handleLogin"
+            @click="handleButtonClick"
             class="login-button"
           >
-            {{ loading ? '登录中...' : '登 录' }}
+            {{ loading ? (isLoginMode ? '登录中...' : '注册中...') : (isLoginMode ? '登 录' : '注 册') }}
           </n-button>
         </div>
       </n-form>
@@ -101,8 +146,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, reactive, onMounted, watch, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import {
   NCard, 
   NForm, 
@@ -119,6 +164,7 @@ import {
   BarChartOutline as BarChartIcon, 
   LockClosedOutline as LockClosedIcon,
   PersonOutline as PersonIcon,
+  MailOutline as MailIcon,
 } from '@vicons/ionicons5';
 import { apiService } from '@/services/api';
 import type { LoginRequest } from '@/types';
@@ -126,31 +172,57 @@ import AnnouncementBanner from '@/components/AnnouncementBanner.vue';
 
 const message = useMessage();
 const router = useRouter();
+const route = useRoute();
 const formRef = ref<FormInst | null>(null);
 const loading = ref(false);
 const announcement = ref('');
 const showAnnouncementBanner = ref(true);
 const showRegisterDialog = ref(false);
+const isLoginMode = ref(true);
 
 const formValue = reactive({
   username: '',
-  password: ''
+  password: '',
+  display_name: '',
+  email: '',
+  confirmPassword: ''
 });
 
-const rules: FormRules = {
-  username: [
-    {
-      required: true,
-      message: '请输入用户名'
-    }
-  ],
-  password: [
-    {
-      required: true,
-      message: '请输入密码'
-    }
-  ]
-};
+// 动态生成验证规则
+const rules = computed<FormRules>(() => {
+  const baseRules: FormRules = {
+    username: [
+      {
+        required: true,
+        message: '请输入用户名'
+      }
+    ],
+    password: [
+      {
+        required: true,
+        message: '请输入密码'
+      }
+    ]
+  };
+  
+  // 注册模式下添加确认密码验证
+  if (!isLoginMode.value) {
+    baseRules.confirmPassword = [
+      {
+        required: true,
+        message: '请确认密码'
+      },
+      {
+        validator: (rule, value) => {
+          return value === formValue.password;
+        },
+        message: '两次输入的密码不一致'
+      }
+    ];
+  }
+  
+  return baseRules;
+});
 
 // 显示系统公告
 const showAnnouncement = (content: string) => {
@@ -179,6 +251,11 @@ watch(systemConfig, (newConfig) => {
 onMounted(async () => {
   console.log('LoginPage.vue onMounted: 开始执行');
   try {
+    // 检查URL参数，如果是注册模式则切换到注册
+    if (route.query.register === 'true') {
+      isLoginMode.value = false;
+    }
+    
     // 获取系统配置
     console.log('LoginPage.vue: 正在获取 /api/config');
     const config = await apiService.getConfig();
@@ -195,23 +272,26 @@ onMounted(async () => {
     
     console.log('LoginPage.vue: 更新后的 systemConfig.value:', JSON.stringify(systemConfig.value));
     
-    // 不重复检查是否需要登录，因为路由守卫已经做了这个检查
-    // 直接检查是否已登录
+    // 检查是否已登录
     const token = localStorage.getItem('token');
-    if (!token) {
-      console.log('LoginPage.vue: 未找到 token, 停留在此页面');
-      return; // 没有token，停留在登录页
-    }
-    
-    const isAuthenticated = await apiService.checkAuth();
-    console.log('LoginPage.vue: 认证检查结果 (isAuthenticated):', isAuthenticated);
-    
-    if (isAuthenticated) {
-      // 已登录，跳转到主页
-      console.log('LoginPage.vue: 用户已认证，将跳转到主页');
-      router.push('/');
+    if (token) {
+      try {
+        const isAuthenticated = await apiService.checkAuth();
+        console.log('LoginPage.vue: 认证检查结果 (isAuthenticated):', isAuthenticated);
+        
+        if (isAuthenticated) {
+          // 已登录，跳转到主页
+          console.log('LoginPage.vue: 用户已认证，将跳转到主页');
+          router.push('/');
+          return;
+        } else {
+          console.log('LoginPage.vue: 用户未认证，停留在登录页');
+        }
+      } catch (error) {
+        console.error('认证检查失败:', error);
+      }
     } else {
-      console.log('LoginPage.vue: 用户未认证，停留在登录页');
+      console.log('LoginPage.vue: 未找到 token, 停留在登录页');
     }
   } catch (error) {
     console.error('LoginPage.vue: onMounted 期间发生错误:', error);
@@ -220,20 +300,27 @@ onMounted(async () => {
 });
 
 const handleLogin = () => {
-  formRef.value?.validate(async (errors) => {
-    if (errors) {
-      return;
-    }
+  console.log('handleLogin 被调用');
+  
+  // 简单验证
+  if (!formValue.username || !formValue.password) {
+    message.error('请输入用户名和密码');
+    return;
+  }
+  
+  loading.value = true;
+  
+  try {
+    const loginRequest: LoginRequest = {
+      username: formValue.username,
+      password: formValue.password
+    };
     
-    loading.value = true;
+    console.log('发送登录请求:', loginRequest);
     
-    try {
-      const loginRequest: LoginRequest = {
-        username: formValue.username,
-        password: formValue.password
-      };
-      
-      const response = await apiService.login(loginRequest);
+    // 调用API
+    apiService.login(loginRequest).then(response => {
+      console.log('登录API响应:', response);
       
       if (response.access_token) {
         message.success('登录成功');
@@ -242,20 +329,93 @@ const handleLogin = () => {
       } else {
         message.error(response.message || '登录失败');
       }
-    } catch (error: any) {
-      console.error('登录失败:', error);
+    }).catch(error => {
+      console.error('登录API错误:', error);
       message.error(error.message || '登录失败');
-    } finally {
+    }).finally(() => {
       loading.value = false;
-    }
-  });
+    });
+    
+  } catch (error: any) {
+    console.error('登录处理错误:', error);
+    message.error(error.message || '登录失败');
+    loading.value = false;
+  }
 };
 
-// 打开注册页面（简单处理，跳转到用户面板）
-const openRegister = () => {
-  // 简单处理：在新标签页打开注册界面
-  // 实际应用中可以有专门的注册页面
-  router.push('/?register=true');
+const handleRegister = () => {
+  console.log('handleRegister 被调用');
+  
+  // 简单验证
+  if (!formValue.username || !formValue.password) {
+    message.error('请输入用户名和密码');
+    return;
+  }
+  
+  if (formValue.password !== formValue.confirmPassword) {
+    message.error('两次输入的密码不一致');
+    return;
+  }
+  
+  loading.value = true;
+  
+  try {
+    const registerRequest = {
+      username: formValue.username,
+      password: formValue.password,
+      display_name: formValue.display_name || undefined,
+      email: formValue.email || undefined
+    };
+    
+    console.log('发送注册请求:', registerRequest);
+    
+    // 调用API
+    apiService.register(registerRequest).then(response => {
+      console.log('注册API响应:', response);
+      
+      if (response.access_token) {
+        message.success('注册成功');
+        // 注册成功后跳转到主页
+        router.push('/');
+      } else {
+        message.error(response.message || '注册失败');
+      }
+    }).catch(error => {
+      console.error('注册API错误:', error);
+      message.error(error.message || '注册失败');
+    }).finally(() => {
+      loading.value = false;
+    });
+    
+  } catch (error: any) {
+    console.error('注册处理错误:', error);
+    message.error(error.message || '注册失败');
+    loading.value = false;
+  }
+};
+
+// 切换登录/注册模式
+const toggleMode = () => {
+  isLoginMode.value = !isLoginMode.value;
+  // 清空表单
+  formValue.username = '';
+  formValue.password = '';
+  formValue.display_name = '';
+  formValue.email = '';
+  formValue.confirmPassword = '';
+};
+
+// 处理按钮点击
+const handleButtonClick = () => {
+  console.log('按钮被点击了！');
+  console.log('当前模式:', isLoginMode.value ? '登录' : '注册');
+  console.log('表单数据:', formValue);
+  
+  if (isLoginMode.value) {
+    handleLogin();
+  } else {
+    handleRegister();
+  }
 };
 </script>
 
