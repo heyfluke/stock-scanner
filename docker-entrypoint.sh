@@ -24,7 +24,14 @@ for attempt in range(1, max_retries + 1):
                 result = conn.execute(text('SELECT version()'))
                 version = result.fetchone()[0]
                 print(f'PostgreSQL 版本: {version}')
-            print('✅ 数据库连接成功')
+            print('✅ PostgreSQL 数据库连接成功')
+        elif database_url.startswith('mysql://') or database_url.startswith('mysql+pymysql://'):
+            engine = create_engine(database_url)
+            with engine.connect() as conn:
+                result = conn.execute(text('SELECT VERSION()'))
+                version = result.fetchone()[0]
+                print(f'MySQL 版本: {version}')
+            print('✅ MySQL 数据库连接成功')
         else:
             print('使用 SQLite 数据库')
         break

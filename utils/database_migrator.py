@@ -46,6 +46,12 @@ class DatabaseMigrator:
                         WHERE table_schema = 'public' 
                         AND table_name = 'database_version'
                     """)).first()
+                elif database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL 语法
+                    # 检查是否存在版本表
+                    result = session.execute(text("""
+                        SHOW TABLES LIKE 'database_version'
+                    """)).first()
                 else:
                     # SQLite 语法
                     # 检查是否存在版本表
@@ -129,6 +135,46 @@ class DatabaseMigrator:
                     pass
                 
                 return 0
+                
+            elif database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                # MySQL 语法
+                # 检查是否存在基础表
+                tables_result = session.execute(text("""
+                    SHOW TABLES
+                """)).all()
+                
+                existing_tables = [row[0] for row in tables_result]
+                
+                # 如果存在基础表，说明是版本1
+                if 'users' in existing_tables and 'user_favorites' in existing_tables and 'analysis_history' in existing_tables:
+                    logger.info("检测到现有数据库包含基础表，推断为版本1")
+                    return 1
+                
+                # 检查是否有对话表
+                if 'conversations' in existing_tables and 'conversation_messages' in existing_tables:
+                    logger.info("检测到现有数据库包含对话表，推断为版本2")
+                    return 2
+                
+                # 检查是否有用户设置表
+                if 'user_settings' in existing_tables:
+                    logger.info("检测到现有数据库包含用户设置表，推断为版本3")
+                    return 3
+                
+                # 检查分析历史表是否有新字段
+                try:
+                    columns_result = session.execute(text("""
+                        SHOW COLUMNS FROM analysis_history
+                    """)).all()
+                    
+                    columns = [row[0] for row in columns_result]
+                    
+                    if 'ai_output' in columns and 'chart_data' in columns:
+                        logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                        return 4
+                except:
+                    pass
+                
+                return 0
             else:
                 # SQLite 语法
                 # 检查是否存在基础表
@@ -195,6 +241,17 @@ class DatabaseMigrator:
                         CREATE TABLE IF NOT EXISTS database_version (
                             id SERIAL PRIMARY KEY,
                             version INTEGER NOT NULL,
+                            migration_name TEXT NOT NULL,
+                            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            description TEXT
+                        )
+                    """))
+                elif database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS database_version (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            version INT NOT NULL,
                             migration_name TEXT NOT NULL,
                             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             description TEXT
@@ -409,6 +466,30 @@ class DatabaseMigrator:
                         FROM information_schema.columns 
                         WHERE table_name = 'analysis_history' 
                         AND table_schema = 'public'
+                    """)).all()
+                    
+                    columns = [row[0] for row in result]
+                    
+                    # 添加ai_output字段
+                    if 'ai_output' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN ai_output TEXT
+                        """))
+                        logger.info("添加ai_output字段")
+                    
+                    # 添加chart_data字段
+                    if 'chart_data' not in columns:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN chart_data TEXT
+                        """))
+                        logger.info("添加chart_data字段")
+                elif database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL 语法
+                    # 检查字段是否已存在
+                    result = session.execute(text("""
+                        SHOW COLUMNS FROM analysis_history
                     """)).all()
                     
                     columns = [row[0] for row in result]

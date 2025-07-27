@@ -19,7 +19,7 @@ services:
       # 用户系统配置
       - ENABLE_USER_SYSTEM=${ENABLE_USER_SYSTEM:-true}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=sqlite:///data/stock_scanner.db
+      - DATABASE_URL=mysql+pymysql://dev_user:dev_password@stock-scanner-mysql-dev:3306/stock_scanner_dev
       # 开发环境特定配置
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
@@ -87,10 +87,30 @@ services:
     profiles:
       - postgres
 
+  # 可选：MySQL for development (替代SQLite)
+  mysql-dev:
+    image: mysql:8.0
+    container_name: stock-scanner-mysql-dev
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=stock_scanner_dev
+      - MYSQL_USER=dev_user
+      - MYSQL_PASSWORD=dev_password
+    volumes:
+      - mysql-dev-data:/var/lib/mysql
+      - ./init-scripts/02-init-mysql.sql:/docker-entrypoint-initdb.d/01-init-mysql.sql
+    networks:
+      - stock-scanner-dev-network
+    profiles:
+      - mysql
+
 networks:
   stock-scanner-dev-network:
     driver: bridge
 
 volumes:
   redis-dev-data:
-  postgres-dev-data: 
+  postgres-dev-data:
+  mysql-dev-data: 
