@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     conversation_id INT NOT NULL,
     role VARCHAR(20) NOT NULL, -- 'user' 或 'assistant'
-    content TEXT NOT NULL,
+    content LONGTEXT NOT NULL, -- 使用LONGTEXT支持长文本对话内容
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );

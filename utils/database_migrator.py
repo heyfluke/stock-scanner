@@ -231,8 +231,24 @@ class DatabaseMigrator:
                                 """)).first()
                                 
                                 if type_result and type_result[0] == 'longtext':
-                                    logger.info("检测到现有数据库包含LONGTEXT字段，推断为版本5")
-                                    return 5
+                                    # 进一步检查conversation_messages表的content字段
+                                    try:
+                                        conv_type_result = session.execute(text("""
+                                            SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                                            WHERE TABLE_SCHEMA = DATABASE() 
+                                                AND TABLE_NAME = 'conversation_messages' 
+                                                AND COLUMN_NAME = 'content'
+                                        """)).first()
+                                        
+                                        if conv_type_result and conv_type_result[0] == 'longtext':
+                                            logger.info("检测到现有数据库包含完整的LONGTEXT字段，推断为版本6")
+                                            return 6
+                                        else:
+                                            logger.info("检测到现有数据库包含部分LONGTEXT字段，推断为版本5")
+                                            return 5
+                                    except:
+                                        logger.info("检测到现有数据库包含LONGTEXT字段，推断为版本5")
+                                        return 5
                                 else:
                                     logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
                                     return 4
@@ -348,6 +364,12 @@ class DatabaseMigrator:
                 "name": "fix_text_fields_to_longtext",
                 "description": "将analysis_history表的TEXT字段升级为LONGTEXT以支持大容量数据",
                 "migrate": self._migrate_to_v5
+            },
+            {
+                "version": 6,
+                "name": "fix_conversation_messages_content",
+                "description": "将conversation_messages表的content字段升级为LONGTEXT以支持长对话内容",
+                "migrate": self._migrate_to_v6
             }
         ]
     
@@ -614,6 +636,38 @@ class DatabaseMigrator:
             
         except Exception as e:
             logger.error(f"v5迁移失败: {e}")
+            raise
+    
+    def _migrate_to_v6(self):
+        """迁移到版本6：修复conversation_messages表的content字段为LONGTEXT"""
+        try:
+            logger.info("开始v6迁移：修复conversation_messages表的content字段为LONGTEXT")
+            
+            with Session(self.engine) as session:
+                # 检测数据库类型
+                database_url = str(self.engine.url)
+                
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL数据库：将conversation_messages.content字段升级为LONGTEXT
+                    logger.info("检测到MySQL数据库，升级conversation_messages.content字段为LONGTEXT")
+                    
+                    # 升级conversation_messages表的content字段
+                    session.execute(text("""
+                        ALTER TABLE conversation_messages 
+                        MODIFY COLUMN content LONGTEXT COMMENT '使用LONGTEXT支持长文本对话内容'
+                    """))
+                    logger.info("升级conversation_messages.content字段为LONGTEXT")
+                    
+                else:
+                    # SQLite和PostgreSQL不需要修改，它们的TEXT类型已经支持大容量数据
+                    logger.info(f"检测到数据库类型: {database_url}，无需修改字段类型")
+                
+                session.commit()
+            
+            logger.info("v6迁移完成：conversation_messages.content字段升级成功")
+            
+        except Exception as e:
+            logger.error(f"v6迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:
