@@ -717,11 +717,12 @@ class AIAnalyzer:
         
         # 构建股票信息摘要
         stock_summary = []
-        for code in stock_codes:
-            if code in analysis_result:
-                stock_info = analysis_result[code]
-                summary = f"{code}: 价格{stock_info.get('price', 'N/A')}, 评分{stock_info.get('score', 'N/A')}, RSI{stock_info.get('rsi', 'N/A')}"
-                stock_summary.append(summary)
+        if analysis_result:  # 检查analysis_result是否为None
+            for code in stock_codes:
+                if code in analysis_result:
+                    stock_info = analysis_result[code]
+                    summary = f"{code}: 价格{stock_info.get('price', 'N/A')}, 评分{stock_info.get('score', 'N/A')}, RSI{stock_info.get('rsi', 'N/A')}"
+                    stock_summary.append(summary)
         
         # 市场类型映射
         market_names = {

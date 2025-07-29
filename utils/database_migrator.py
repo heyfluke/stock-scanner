@@ -218,8 +218,31 @@ class DatabaseMigrator:
                     columns = [row[1] for row in columns_result]
                     
                     if 'ai_output' in columns and 'chart_data' in columns:
-                        logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
-                        return 4
+                        # 检查字段类型是否为LONGTEXT（MySQL）或已经是大容量类型
+                        database_url = str(self.engine.url)
+                        if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                            # 对于MySQL，检查字段类型
+                            try:
+                                type_result = session.execute(text("""
+                                    SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                                    WHERE TABLE_SCHEMA = DATABASE() 
+                                        AND TABLE_NAME = 'analysis_history' 
+                                        AND COLUMN_NAME = 'ai_output'
+                                """)).first()
+                                
+                                if type_result and type_result[0] == 'longtext':
+                                    logger.info("检测到现有数据库包含LONGTEXT字段，推断为版本5")
+                                    return 5
+                                else:
+                                    logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                                    return 4
+                            except:
+                                logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                                return 4
+                        else:
+                            # SQLite和PostgreSQL的TEXT类型已经支持大容量数据
+                            logger.info("检测到现有数据库包含AI输出字段，推断为版本4")
+                            return 4
                 except:
                     pass
                 
@@ -319,6 +342,12 @@ class DatabaseMigrator:
                 "name": "add_analysis_history_ai_fields",
                 "description": "为分析历史添加AI输出和图表数据字段",
                 "migrate": self._migrate_to_v4
+            },
+            {
+                "version": 5,
+                "name": "fix_text_fields_to_longtext",
+                "description": "将analysis_history表的TEXT字段升级为LONGTEXT以支持大容量数据",
+                "migrate": self._migrate_to_v5
             }
         ]
     
@@ -539,6 +568,52 @@ class DatabaseMigrator:
             
         except Exception as e:
             logger.error(f"v4迁移失败: {e}")
+            raise
+    
+    def _migrate_to_v5(self):
+        """迁移到版本5：修复TEXT字段为LONGTEXT"""
+        try:
+            logger.info("开始v5迁移：修复TEXT字段为LONGTEXT")
+            
+            with Session(self.engine) as session:
+                # 检测数据库类型
+                database_url = str(self.engine.url)
+                
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL数据库：将TEXT字段升级为LONGTEXT
+                    logger.info("检测到MySQL数据库，升级TEXT字段为LONGTEXT")
+                    
+                    # 升级analysis_result字段
+                    session.execute(text("""
+                        ALTER TABLE analysis_history 
+                        MODIFY COLUMN analysis_result LONGTEXT COMMENT 'JSON格式，使用LONGTEXT支持大容量数据'
+                    """))
+                    logger.info("升级analysis_result字段为LONGTEXT")
+                    
+                    # 升级ai_output字段
+                    session.execute(text("""
+                        ALTER TABLE analysis_history 
+                        MODIFY COLUMN ai_output LONGTEXT COMMENT '使用LONGTEXT支持长文本AI分析结果'
+                    """))
+                    logger.info("升级ai_output字段为LONGTEXT")
+                    
+                    # 升级chart_data字段
+                    session.execute(text("""
+                        ALTER TABLE analysis_history 
+                        MODIFY COLUMN chart_data LONGTEXT COMMENT 'JSON格式，使用LONGTEXT支持大量图表数据'
+                    """))
+                    logger.info("升级chart_data字段为LONGTEXT")
+                    
+                else:
+                    # SQLite和PostgreSQL不需要修改，它们的TEXT类型已经支持大容量数据
+                    logger.info(f"检测到数据库类型: {database_url}，无需修改字段类型")
+                
+                session.commit()
+            
+            logger.info("v5迁移完成：TEXT字段升级成功")
+            
+        except Exception as e:
+            logger.error(f"v5迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:

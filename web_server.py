@@ -471,12 +471,12 @@ async def send_message(
     
     # 构建分析上下文
     analysis_context = {
-        "stock_codes": target_history["stock_codes"],
-        "market_type": target_history["market_type"],
-        "analysis_days": target_history["analysis_days"],
-        "analysis_result": target_history["analysis_result"],
-        "ai_output": target_history["ai_output"],
-        "chart_data": target_history["chart_data"]
+        "stock_codes": target_history["stock_codes"] or [],  # 提供默认空列表
+        "market_type": target_history["market_type"] or "A",  # 提供默认市场类型
+        "analysis_days": target_history["analysis_days"] or 30,  # 提供默认分析天数
+        "analysis_result": target_history["analysis_result"] or {},  # 提供默认空字典
+        "ai_output": target_history["ai_output"] or "",  # 提供默认空字符串
+        "chart_data": target_history["chart_data"] or {}  # 提供默认空字典
     }
     
     # 创建AI分析器

@@ -357,16 +357,30 @@ class UserService:
                 
                 result = []
                 for history in histories:
-                    result.append({
-                        "id": history.id,
-                        "stock_codes": json.loads(history.stock_codes),
-                        "market_type": history.market_type,
-                        "analysis_days": history.analysis_days,
-                        "analysis_result": json.loads(history.analysis_result) if history.analysis_result else None,
-                        "ai_output": history.ai_output,
-                        "chart_data": json.loads(history.chart_data) if history.chart_data else None,
-                        "created_at": history.created_at.isoformat()
-                    })
+                    try:
+                        result.append({
+                            "id": history.id,
+                            "stock_codes": json.loads(history.stock_codes) if history.stock_codes else [],
+                            "market_type": history.market_type,
+                            "analysis_days": history.analysis_days,
+                            "analysis_result": json.loads(history.analysis_result) if history.analysis_result else None,
+                            "ai_output": history.ai_output,
+                            "chart_data": json.loads(history.chart_data) if history.chart_data else None,
+                            "created_at": history.created_at.isoformat()
+                        })
+                    except json.JSONDecodeError as e:
+                        logger.error(f"解析历史记录JSON失败 (ID: {history.id}): {e}")
+                        # 使用默认值
+                        result.append({
+                            "id": history.id,
+                            "stock_codes": [],
+                            "market_type": history.market_type,
+                            "analysis_days": history.analysis_days,
+                            "analysis_result": None,
+                            "ai_output": history.ai_output,
+                            "chart_data": None,
+                            "created_at": history.created_at.isoformat()
+                        })
                 return result
                 
         except Exception as e:

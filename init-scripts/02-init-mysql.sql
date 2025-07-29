@@ -39,9 +39,9 @@ CREATE TABLE IF NOT EXISTS analysis_history (
     stock_codes TEXT NOT NULL, -- JSON格式
     market_type VARCHAR(10) NOT NULL,
     analysis_days INT DEFAULT 30,
-    analysis_result TEXT, -- JSON格式
-    ai_output TEXT,
-    chart_data TEXT, -- JSON格式
+    analysis_result LONGTEXT, -- JSON格式，使用LONGTEXT支持大容量数据
+    ai_output LONGTEXT, -- 使用LONGTEXT支持长文本AI分析结果
+    chart_data LONGTEXT, -- JSON格式，使用LONGTEXT支持大量图表数据
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
