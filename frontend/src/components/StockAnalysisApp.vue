@@ -109,15 +109,6 @@
                   <n-space align="center" justify="space-between">
                     <n-text>分析结果 ({{ analyzedStocks.length }})</n-text>
                     <n-space>
-                      <n-select 
-                        v-model:value="displayMode" 
-                        size="small" 
-                        style="width: 120px"
-                        :options="[
-                          { label: '卡片视图', value: 'card' },
-                          { label: '表格视图', value: 'table' }
-                        ]"
-                      />
                       <n-button 
                         size="small" 
                         :disabled="analyzedStocks.length === 0"
@@ -125,7 +116,6 @@
                       >
                         复制结果
                       </n-button>
-
                     </n-space>
                   </n-space>
                 </div>
@@ -138,32 +128,15 @@
                   </n-empty>
                 </template>
                 
-                <template v-else-if="displayMode === 'card'">
-                  <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
-                    <n-grid-item v-for="(stock, index) in analyzedStocks" :key="stock.code">
-                      <StockCard 
-                        :stock="stock" 
-                        :ref="(el: any) => { if (el) stockCardRefs[index] = el }"
-                        @start-conversation="handleStartConversation"
-                      />
-                    </n-grid-item>
-                  </n-grid>
-                </template>
-                
-                <template v-else>
-                  <div class="table-container">
-                    <n-data-table
-                      :columns="stockTableColumns"
-                      :data="analyzedStocks"
-                      :pagination="{ pageSize: 10 }"
-                      :row-key="(row: StockInfo) => row.code"
-                      :bordered="false"
-                      :single-line="false"
-                      striped
-                      :scroll-x="1200"
+                <n-grid cols="1" :x-gap="8" :y-gap="8" responsive="screen">
+                  <n-grid-item v-for="(stock, index) in analyzedStocks" :key="stock.code">
+                    <StockCard 
+                      :stock="stock" 
+                      :ref="(el: any) => { if (el) stockCardRefs[index] = el }"
+                      @start-conversation="handleStartConversation"
                     />
-                  </div>
-                </template>
+                  </n-grid-item>
+                </n-grid>
               </div>
             </n-grid-item>
           </n-grid>
@@ -208,12 +181,10 @@ import {
   useMessage,
   NSpace,
   NText,
-  NDataTable,
   NDropdown,
   NModal,
   NH2,
-  NCollapseTransition,
-  type DataTableColumns
+  NCollapseTransition
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
 import { 
@@ -264,7 +235,7 @@ const stockCodes = ref('');
 const analysisDays = ref(30); // 默认30天
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
-const displayMode = ref<'card' | 'table'>('card');
+
 const resultsContainerRef = ref<HTMLElement | null>(null);
 
 
@@ -391,142 +362,7 @@ const analysisDaysOptions = [
   { label: '90天', value: 90 }
 ];
 
-// 表格列定义
-const stockTableColumns = ref<DataTableColumns<StockInfo>>([
-  {
-    title: '代码',
-    key: 'code',
-    width: 100,
-    fixed: 'left'
-  },
-  {
-    title: '状态',
-    key: 'analysisStatus',
-    width: 100,
-    render(row: StockInfo) {
-      const statusMap = {
-        'waiting': '等待分析',
-        'analyzing': '分析中',
-        'completed': '已完成',
-        'error': '出错'
-      };
-      return statusMap[row.analysisStatus] || row.analysisStatus;
-    }
-  },
-  {
-    title: '价格',
-    key: 'price',
-    width: 100,
-    render(row: StockInfo) {
-      return row.price !== undefined ? row.price.toFixed(2) : '--';
-    }
-  },
-  {
-    title: '涨跌额',
-    key: 'price_change',
-    width: 100,
-    render(row: StockInfo) {
-      if (row.price_change === undefined) return '--';
-      const sign = row.price_change > 0 ? '+' : '';
-      return `${sign}${row.price_change.toFixed(2)}`;
-    }
-  },
-  {
-    title: '涨跌幅',
-    key: 'changePercent',
-    width: 100,
-    render(row: StockInfo) {
-      if (row.changePercent === undefined) {
-        // 如果没有changePercent但有price_change和price，尝试计算
-        if (row.price_change !== undefined && row.price !== undefined) {
-          const basePrice = row.price - row.price_change;
-          if (basePrice !== 0) {
-            const calculatedPercent = (row.price_change / basePrice) * 100;
-            const sign = calculatedPercent > 0 ? '+' : '';
-            return `${sign}${calculatedPercent.toFixed(2)}%`;
-          }
-        }
-        return '--';
-      }
-      const sign = row.changePercent > 0 ? '+' : '';
-      return `${sign}${row.changePercent.toFixed(2)}%`;
-    }
-  },
-  {
-    title: 'RSI',
-    key: 'rsi',
-    width: 80,
-    render(row: StockInfo) {
-      return row.rsi !== undefined ? row.rsi.toFixed(2) : '--';
-    }
-  },
-  {
-    title: '均线趋势',
-    key: 'ma_trend',
-    width: 100,
-    render(row: StockInfo) {
-      const trendMap: Record<string, string> = {
-        'UP': '上升',
-        'DOWN': '下降',
-        'NEUTRAL': '平稳'
-      };
-      return row.ma_trend ? trendMap[row.ma_trend] || row.ma_trend : '--';
-    }
-  },
-  {
-    title: 'MACD信号',
-    key: 'macd_signal',
-    width: 100,
-    render(row: StockInfo) {
-      const signalMap: Record<string, string> = {
-        'BUY': '买入',
-        'SELL': '卖出',
-        'HOLD': '持有',
-        'NEUTRAL': '中性'
-      };
-      return row.macd_signal ? signalMap[row.macd_signal] || row.macd_signal : '--';
-    }
-  },
-  {
-    title: '评分',
-    key: 'score',
-    width: 80,
-    render(row: StockInfo) {
-      return row.score !== undefined ? row.score : '--';
-    }
-  },
-  {
-    title: '推荐',
-    key: 'recommendation',
-    width: 100
-  },
-  {
-    title: '分析日期',
-    key: 'analysis_date',
-    width: 120,
-    render(row: StockInfo) {
-      if (!row.analysis_date) return '--';
-      try {
-        const date = new Date(row.analysis_date);
-        if (isNaN(date.getTime())) {
-          return row.analysis_date;
-        }
-        return date.toISOString().split('T')[0];
-      } catch (e) {
-        return row.analysis_date;
-      }
-    }
-  },
-  {
-    title: '分析结果',
-    key: 'analysis',
-    ellipsis: {
-      tooltip: true
-    },
-    width: 300,
-    className: 'analysis-cell'
-  }
-]);
+
 
 
 
