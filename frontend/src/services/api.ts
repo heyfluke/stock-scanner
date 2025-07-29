@@ -111,9 +111,17 @@ export const apiService = {
   },
 
   // 登出
-  logout: () => {
-    localStorage.removeItem('token');
-    // 不在这里处理跳转，让调用方处理路由
+  logout: async (): Promise<void> => {
+    try {
+      // 调用后端登出接口
+      await axiosInstance.post('/logout');
+    } catch (error) {
+      // 即使后端调用失败，也要清除本地token
+      console.warn('登出接口调用失败，但已清除本地token');
+    } finally {
+      // 清除本地token
+      localStorage.removeItem('token');
+    }
   },
 
   // 收藏功能

@@ -400,10 +400,16 @@ const handleRegister = async () => {
 };
 
 // 退出登录
-const handleLogout = () => {
-  apiService.logout();
-  // 使用Vue Router跳转到登录页
-  router.push('/login');
+const handleLogout = async () => {
+  try {
+    await apiService.logout();
+    message.success('登出成功');
+  } catch (error) {
+    console.error('登出失败:', error);
+  } finally {
+    // 使用Vue Router跳转到登录页
+    router.push('/login');
+  }
 };
 
 // 跳转到登录页

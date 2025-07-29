@@ -146,9 +146,15 @@ async def get_current_user(token: Optional[str] = Depends(optional_oauth2_scheme
         if username is None:
             raise credentials_exception
             
-        # 如果启用了用户系统且有user_id，返回完整用户信息
+        # 如果启用了用户系统且有user_id，验证用户是否在数据库中存在
         if ENABLE_USER_SYSTEM and user_id:
-            return {"user_id": user_id, "username": username, "is_authenticated": True}
+            # 验证用户是否在数据库中存在
+            user = user_service.get_user_by_id(user_id)
+            if user:
+                return {"user_id": user_id, "username": username, "is_authenticated": True}
+            else:
+                # 用户不存在于数据库中，清除认证状态
+                raise credentials_exception
         else:
             # 兼容旧版认证系统
             return {"user_id": None, "username": username, "is_authenticated": True}
@@ -256,6 +262,13 @@ async def check_auth(current_user: dict = Depends(get_current_user)):
         "user_id": current_user.get("user_id"),
         "user_system_enabled": ENABLE_USER_SYSTEM
     }
+
+@app.post("/api/logout")
+async def logout():
+    """用户登出接口"""
+    # JWT是无状态的，服务端不需要做任何操作
+    # 客户端需要清除localStorage中的token
+    return {"message": "登出成功"}
 
 # 获取用户信息
 @app.get("/api/user/profile")
