@@ -86,6 +86,35 @@ class AIAnalyzer:
         """获取随机的对话提示词"""
         import random
         return random.choice(self.conversation_prompts)
+
+    async def get_completion(self, prompt: str, stream: bool = False) -> str:
+        """
+        使用当前模型与密钥执行一次性补全，返回完整文本（非流式）。
+        """
+        api_url = APIUtils.format_api_url(self.API_URL)
+        if not self.API_KEY or self.API_KEY.strip() == "":
+            raise RuntimeError("API_KEY未配置或为空")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.API_KEY.strip()}"
+        }
+        request_data = {
+            "model": self.API_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "stream": False
+        }
+        async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
+            response = await client.post(api_url, json=request_data, headers=headers)
+            if response.status_code != 200:
+                try:
+                    data = response.json()
+                    msg = data.get('error', {}).get('message', str(data))
+                except Exception:
+                    msg = response.text
+                raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
+            data = response.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
     
     async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
