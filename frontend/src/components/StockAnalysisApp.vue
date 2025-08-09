@@ -75,6 +75,14 @@
                   />
                 </n-form-item>
                 
+                <n-form-item label="分析方案">
+                  <n-select
+                    v-model:value="selectedPresetId"
+                    :options="presetOptions"
+                    placeholder="标准版"
+                  />
+                </n-form-item>
+
                 <n-form-item label="分析天数">
                   <n-select
                     v-model:value="analysisDays"
@@ -165,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount, h, watch, nextTick } from 'vue';
+import { ref, onMounted, computed, onBeforeUnmount, watch, nextTick } from 'vue';
 import { 
   NLayout, 
   NLayoutContent, 
@@ -181,9 +189,6 @@ import {
   useMessage,
   NSpace,
   NText,
-  NDropdown,
-  NModal,
-  NH2,
   NCollapseTransition
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
@@ -192,12 +197,9 @@ import {
   PersonOutline as PersonIcon,
   ChevronDownOutline as ChevronDownIcon
 } from '@vicons/ionicons5';
-import VChart from 'vue-echarts';
-import type { EChartsOption } from 'echarts';
-import { get, set } from 'idb-keyval';
-import { useRoute, useRouter } from 'vue-router';
-import { marked } from 'marked';
-import * as echarts from 'echarts';
+// removed unused imports
+// import { useRoute } from 'vue-router';
+// removed unused imports
 
 import MarketTimeDisplay from './MarketTimeDisplay.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
@@ -208,14 +210,14 @@ import UserPanel from './UserPanel.vue';
 import ConversationDialog from './ConversationDialog.vue';
 
 import { apiService } from '@/services/api';
-import type { StockInfo, ApiConfig, StreamInitMessage, StreamAnalysisUpdate } from '@/types';
+import type { StockInfo, ApiConfig, StreamInitMessage, StreamAnalysisUpdate, AgentPreset } from '@/types';
 import { loadApiConfig } from '@/utils';
 import { validateMultipleStockCodes, MarketType } from '@/utils/stockValidator';
 
 // 使用Naive UI的组件API
 const message = useMessage();
 const { copy } = useClipboard();
-const router = useRouter();
+// router not used
 
 // 从环境变量获取的默认配置
 const defaultApiUrl = ref('');
@@ -227,12 +229,18 @@ const showAnnouncementBanner = ref(true);
 // 用户面板状态
 const showUserPanel = ref(false);
 const isLoggedIn = ref(false);
-const route = useRoute();
+// route currently unused; remove to avoid lints
 
 // 股票分析配置
 const marketType = ref('A');
 const stockCodes = ref('');
 const analysisDays = ref(30); // 默认30天
+const selectedPresetId = ref<string | null>(null);
+const presets = ref<AgentPreset[]>([]);
+const presetOptions = computed(() => {
+  const items = presets.value.map(p => ({ label: p.name, value: p.id }));
+  return [{ label: '标准版', value: 'standard' }, ...items.filter(i => i.value !== 'standard')];
+});
 const isAnalyzing = ref(false);
 const analyzedStocks = ref<StockInfo[]>([]);
 
@@ -584,7 +592,8 @@ async function analyzeStocks() {
     const requestData = {
       stock_codes: uniqueCodes,
       market_type: marketType.value,
-      analysis_days: analysisDays.value
+      analysis_days: analysisDays.value,
+      preset_id: selectedPresetId.value || 'standard'
     } as any;
     
     // 添加自定义API配置
@@ -890,6 +899,14 @@ onMounted(async () => {
     
     // 初始化后恢复本地保存的配置
     restoreLocalApiConfig();
+
+    // 获取多Agent预设
+    try {
+      presets.value = await apiService.getAgentPresets();
+    } catch (e) {
+      // 忽略错误，使用内置默认项
+      presets.value = [];
+    }
   } catch (error) {
     console.error('获取默认配置时出错:', error);
   }

@@ -9,6 +9,14 @@
         />
       </n-form-item>
       
+      <n-form-item label="分析方案">
+        <n-select
+          v-model:value="selectedPresetId"
+          :options="presetOptions"
+          placeholder="标准版"
+        />
+      </n-form-item>
+
       <n-form-item :label='marketType === "US" ? "股票搜索" : "基金搜索"' v-if="showSearch">
         <StockSearch :market-type="marketType" @select="addSelectedStock" />
       </n-form-item>
@@ -85,7 +93,9 @@ import {
 
 import StockSearch from './StockSearch.vue';
 import { validateMultipleStockCodes, MarketType } from '@/utils/stockValidator';
-import type { ApiConfig } from '@/types';
+import type { ApiConfig, AgentPreset } from '@/types';
+import { apiService } from '@/services/api';
+import { onMounted } from 'vue';
 
 // Props
 interface Props {
@@ -101,6 +111,7 @@ const emit = defineEmits<{
     marketType: string;
     analysisDays: number;
     apiConfig: ApiConfig;
+    presetId?: string;
   }];
 }>();
 
@@ -111,6 +122,13 @@ const message = useMessage();
 const marketType = ref('A');
 const stockCodes = ref('');
 const analysisDays = ref(30);
+const selectedPresetId = ref<string | null>('standard');
+const presets = ref<AgentPreset[]>([]);
+const presetOptions = computed(() => {
+  const items = presets.value.map(p => ({ label: p.name, value: p.id }));
+  // 确保标准版在首位
+  return [{ label: '标准版', value: 'standard' }, ...items.filter(i => i.value !== 'standard')];
+});
 
 // 移动端检测
 const isMobile = computed(() => {
@@ -202,7 +220,8 @@ const handleStartAnalysis = () => {
     stockCodes: uniqueCodes,
     marketType: marketType.value,
     analysisDays: analysisDays.value,
-    apiConfig: props.apiConfig
+    apiConfig: props.apiConfig,
+    presetId: selectedPresetId.value || undefined
   });
   
   // 清空输入
@@ -210,6 +229,18 @@ const handleStartAnalysis = () => {
   
   message.success(`开始分析 ${uniqueCodes.length} 只股票，将在新标签页中显示结果`);
 };
+
+// 加载后端预设列表
+onMounted(async () => {
+  try {
+    const serverPresets = await apiService.getAgentPresets();
+    if (Array.isArray(serverPresets) && serverPresets.length > 0) {
+      presets.value = serverPresets;
+    }
+  } catch (e) {
+    // 忽略错误，保持仅有标准版
+  }
+});
 </script>
 
 <style scoped>

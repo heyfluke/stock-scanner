@@ -168,6 +168,7 @@ export interface AnalyzeRequest {
   api_model?: string;
   api_timeout?: number;
   analysis_days?: number; // AI分析使用的天数，默认30天
+  preset_id?: string; // 多Agent分析方案（可选）
 }
 
 export interface TestApiRequest {
@@ -181,6 +182,15 @@ export interface TestApiResponse {
   success: boolean;
   message: string;
   status_code?: number;
+}
+
+// 多Agent相关类型
+export interface AgentPreset {
+  id: string;
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  is_builtin?: boolean;
 }
 
 // 流式响应类型

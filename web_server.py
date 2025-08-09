@@ -20,6 +20,7 @@ import secrets
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from services.ai_analyzer import AIAnalyzer
+from services.agent_orchestrator import AgentOrchestrator
 
 # 添加数据库迁移导入
 from utils.database_migrator import DatabaseMigrator
@@ -76,6 +77,7 @@ class AnalyzeRequest(BaseModel):
     api_model: Optional[str] = None
     api_timeout: Optional[str] = None
     analysis_days: Optional[int] = 30  # AI分析使用的天数，默认30天
+    preset_id: Optional[str] = None     # 多Agent预设方案ID（可选）
 
 class TestAPIRequest(BaseModel):
     api_url: str
@@ -587,6 +589,16 @@ async def get_config():
         'require_login': ENABLE_USER_SYSTEM
     }
     return config
+
+# 预设列表接口（最小实现，返回内置预设）
+@app.get("/api/agent/presets")
+async def list_agent_presets():
+    try:
+        presets = AgentOrchestrator.list_presets()
+        return {"presets": presets}
+    except Exception as e:
+        logger.error(f"获取Agent预设失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取Agent预设失败")
 # AI分析股票
 @app.post("/api/analyze")
 async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_current_user)):
@@ -612,13 +624,23 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
         
         logger.debug(f"自定义API配置: URL={custom_api_url}, 模型={custom_api_model}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
         
-        # 创建新的分析器实例，使用自定义配置
-        custom_analyzer = StockAnalyzerService(
-            custom_api_url=custom_api_url,
-            custom_api_key=custom_api_key,
-            custom_api_model=custom_api_model,
-            custom_api_timeout=custom_api_timeout
-        )
+        # 如果提供了preset_id，则使用Orchestrator；否则保持原有StockAnalyzerService
+        use_orchestrator = True if (request.preset_id and request.preset_id.strip()) else False
+        if use_orchestrator:
+            orchestrator = AgentOrchestrator(
+                custom_api_url=custom_api_url,
+                custom_api_key=custom_api_key,
+                custom_api_model=custom_api_model,
+                custom_api_timeout=custom_api_timeout
+            )
+        else:
+            # 创建新的分析器实例，使用自定义配置
+            custom_analyzer = StockAnalyzerService(
+                custom_api_url=custom_api_url,
+                custom_api_key=custom_api_key,
+                custom_api_model=custom_api_model,
+                custom_api_timeout=custom_api_timeout
+            )
         
         if not stock_codes:
             logger.warning("未提供股票代码")
@@ -654,31 +676,49 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                 chunk_count = 0
                 
                 # 使用异步生成器
-                async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days):
-                    chunk_count += 1
-                    
-                    # 解析chunk数据用于收集
-                    try:
-                        chunk_data = json.loads(chunk)
+                if use_orchestrator:
+                    async for chunk in orchestrator.run([stock_code], market_type, stream=True, analysis_days=analysis_days, preset_id=request.preset_id):
+                        chunk_count += 1
+                        # 收集chunk数据
+                        try:
+                            chunk_data = json.loads(chunk)
+                            if "stock_code" in chunk_data and "score" in chunk_data:
+                                collected_analysis_result[stock_code] = chunk_data
+                            if "ai_analysis_chunk" in chunk_data:
+                                collected_ai_output += chunk_data["ai_analysis_chunk"]
+                            elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                                collected_ai_output = chunk_data["analysis"]
+                            if "chart_data" in chunk_data:
+                                collected_chart_data[stock_code] = chunk_data["chart_data"]
+                        except json.JSONDecodeError:
+                            pass
+                        yield chunk + '\n'
+                else:
+                    async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days):
+                        chunk_count += 1
                         
-                        # 收集基本分析结果
-                        if "stock_code" in chunk_data and "score" in chunk_data:
-                            collected_analysis_result[stock_code] = chunk_data
-                        
-                        # 收集AI分析输出
-                        if "ai_analysis_chunk" in chunk_data:
-                            collected_ai_output += chunk_data["ai_analysis_chunk"]
-                        elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
-                            collected_ai_output = chunk_data["analysis"]
-                        
-                        # 收集图表数据
-                        if "chart_data" in chunk_data:
-                            collected_chart_data[stock_code] = chunk_data["chart_data"]
+                        # 解析chunk数据用于收集
+                        try:
+                            chunk_data = json.loads(chunk)
                             
-                    except json.JSONDecodeError:
-                        pass  # 忽略无法解析的chunk
-                    
-                    yield chunk + '\n'
+                            # 收集基本分析结果
+                            if "stock_code" in chunk_data and "score" in chunk_data:
+                                collected_analysis_result[stock_code] = chunk_data
+                            
+                            # 收集AI分析输出
+                            if "ai_analysis_chunk" in chunk_data:
+                                collected_ai_output += chunk_data["ai_analysis_chunk"]
+                            elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                                collected_ai_output = chunk_data["analysis"]
+                            
+                            # 收集图表数据
+                            if "chart_data" in chunk_data:
+                                collected_chart_data[stock_code] = chunk_data["chart_data"]
+                                
+                        except json.JSONDecodeError:
+                            pass  # 忽略无法解析的chunk
+                        
+                        yield chunk + '\n'
                 
                 logger.info(f"股票 {stock_code} 流式分析完成，共发送 {chunk_count} 个块")
             else:
@@ -693,46 +733,78 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                 chunk_count = 0
                 
                 # 使用异步生成器
-                async for chunk in custom_analyzer.scan_stocks(
-                    [code.strip() for code in stock_codes], 
-                    min_score=0, 
-                    market_type=market_type,
-                    stream=True,
-                    analysis_days=analysis_days
-                ):
-                    chunk_count += 1
-                    
-                    # 解析chunk数据用于收集
-                    try:
-                        chunk_data = json.loads(chunk)
+                if use_orchestrator:
+                    async for chunk in orchestrator.run(
+                        [code.strip() for code in stock_codes],
+                        market_type=market_type,
+                        stream=True,
+                        analysis_days=analysis_days,
+                        preset_id=request.preset_id,
+                    ):
+                        chunk_count += 1
+                        try:
+                            chunk_data = json.loads(chunk)
+                            if "stock_code" in chunk_data:
+                                stock_code = chunk_data["stock_code"]
+                                if "score" in chunk_data:
+                                    collected_analysis_result[stock_code] = chunk_data
+                                if "ai_analysis_chunk" in chunk_data:
+                                    if not isinstance(collected_ai_output, dict):
+                                        collected_ai_output = {}
+                                    if stock_code not in collected_ai_output:
+                                        collected_ai_output[stock_code] = ""
+                                    collected_ai_output[stock_code] += chunk_data["ai_analysis_chunk"]
+                                elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                                    if not isinstance(collected_ai_output, dict):
+                                        collected_ai_output = {}
+                                    collected_ai_output[stock_code] = chunk_data["analysis"]
+                                if "chart_data" in chunk_data:
+                                    collected_chart_data[stock_code] = chunk_data["chart_data"]
+                        except json.JSONDecodeError:
+                            pass
+                        logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
+                        yield chunk + '\n'
+                else:
+                    async for chunk in custom_analyzer.scan_stocks(
+                        [code.strip() for code in stock_codes], 
+                        min_score=0, 
+                        market_type=market_type,
+                        stream=True,
+                        analysis_days=analysis_days
+                    ):
+                        chunk_count += 1
                         
-                        # 收集基本分析结果
-                        if "stock_code" in chunk_data:
-                            stock_code = chunk_data["stock_code"]
-                            if "score" in chunk_data:
-                                collected_analysis_result[stock_code] = chunk_data
+                        # 解析chunk数据用于收集
+                        try:
+                            chunk_data = json.loads(chunk)
                             
-                            # 收集AI分析输出
-                            if "ai_analysis_chunk" in chunk_data:
-                                if not isinstance(collected_ai_output, dict):
-                                    collected_ai_output = {}
-                                if stock_code not in collected_ai_output:
-                                    collected_ai_output[stock_code] = ""
-                                collected_ai_output[stock_code] += chunk_data["ai_analysis_chunk"]
-                            elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
-                                if not isinstance(collected_ai_output, dict):
-                                    collected_ai_output = {}
-                                collected_ai_output[stock_code] = chunk_data["analysis"]
-                            
-                            # 收集图表数据
-                            if "chart_data" in chunk_data:
-                                collected_chart_data[stock_code] = chunk_data["chart_data"]
+                            # 收集基本分析结果
+                            if "stock_code" in chunk_data:
+                                stock_code = chunk_data["stock_code"]
+                                if "score" in chunk_data:
+                                    collected_analysis_result[stock_code] = chunk_data
                                 
-                    except json.JSONDecodeError:
-                        pass  # 忽略无法解析的chunk
-                    
-                    logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
-                    yield chunk + '\n'
+                                # 收集AI分析输出
+                                if "ai_analysis_chunk" in chunk_data:
+                                    if not isinstance(collected_ai_output, dict):
+                                        collected_ai_output = {}
+                                    if stock_code not in collected_ai_output:
+                                        collected_ai_output[stock_code] = ""
+                                    collected_ai_output[stock_code] += chunk_data["ai_analysis_chunk"]
+                                elif "analysis" in chunk_data and chunk_data.get("status") == "completed":
+                                    if not isinstance(collected_ai_output, dict):
+                                        collected_ai_output = {}
+                                    collected_ai_output[stock_code] = chunk_data["analysis"]
+                                
+                                # 收集图表数据
+                                if "chart_data" in chunk_data:
+                                    collected_chart_data[stock_code] = chunk_data["chart_data"]
+                                    
+                        except json.JSONDecodeError:
+                            pass  # 忽略无法解析的chunk
+                        
+                        logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
+                        yield chunk + '\n'
                 
                 logger.info(f"批量流式分析完成，共发送 {chunk_count} 个块")
             

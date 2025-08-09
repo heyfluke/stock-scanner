@@ -370,6 +370,24 @@ class DatabaseMigrator:
                 "name": "fix_conversation_messages_content",
                 "description": "将conversation_messages表的content字段升级为LONGTEXT以支持长对话内容",
                 "migrate": self._migrate_to_v6
+            },
+            {
+                "version": 7,
+                "name": "add_agent_tables",
+                "description": "新增agent相关表(agent_graphs, agent_presets, agent_registry)",
+                "migrate": self._migrate_to_v7
+            },
+            {
+                "version": 8,
+                "name": "add_analysis_run_tables",
+                "description": "新增analysis_runs与node_runs表",
+                "migrate": self._migrate_to_v8
+            },
+            {
+                "version": 9,
+                "name": "add_artifacts_table",
+                "description": "新增artifacts表用于存储中间产物与结果",
+                "migrate": self._migrate_to_v9
             }
         ]
     
@@ -668,6 +686,183 @@ class DatabaseMigrator:
             
         except Exception as e:
             logger.error(f"v6迁移失败: {e}")
+            raise
+
+    def _migrate_to_v7(self):
+        """迁移到版本7：新增Agent相关表"""
+        try:
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_graphs (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            name VARCHAR(255) NOT NULL,
+                            config LONGTEXT NOT NULL,
+                            version INT DEFAULT 1,
+                            created_by VARCHAR(100),
+                            visibility VARCHAR(20) DEFAULT 'private',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_presets (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            name VARCHAR(255) NOT NULL,
+                            graph_id INT,
+                            default_params LONGTEXT,
+                            tags VARCHAR(255),
+                            enabled TINYINT DEFAULT 1,
+                            FOREIGN KEY (graph_id) REFERENCES agent_graphs(id)
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_registry (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            name VARCHAR(255) NOT NULL,
+                            type VARCHAR(100) NOT NULL,
+                            schema_json LONGTEXT,
+                            enabled TINYINT DEFAULT 1
+                        )
+                    """))
+                else:
+                    # SQLite/Postgres 使用兼容建表
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_graphs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            config TEXT NOT NULL,
+                            version INTEGER DEFAULT 1,
+                            created_by TEXT,
+                            visibility TEXT DEFAULT 'private',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_presets (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            graph_id INTEGER,
+                            default_params TEXT,
+                            tags TEXT,
+                            enabled INTEGER DEFAULT 1
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS agent_registry (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            type TEXT NOT NULL,
+                            schema_json TEXT,
+                            enabled INTEGER DEFAULT 1
+                        )
+                    """))
+                session.commit()
+            logger.info("v7迁移完成：Agent相关表创建成功")
+        except Exception as e:
+            logger.error(f"v7迁移失败: {e}")
+            raise
+
+    def _migrate_to_v8(self):
+        """迁移到版本8：新增analysis_runs与node_runs表"""
+        try:
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS analysis_runs (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            user_id INT,
+                            history_id INT,
+                            graph_id INT,
+                            preset_id INT,
+                            status VARCHAR(50),
+                            metrics LONGTEXT,
+                            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            finished_at TIMESTAMP NULL
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS node_runs (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            run_id INT,
+                            node_id VARCHAR(100),
+                            agent_name VARCHAR(255),
+                            status VARCHAR(50),
+                            input_ref LONGTEXT,
+                            output_ref LONGTEXT,
+                            metrics LONGTEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                else:
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS analysis_runs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER,
+                            history_id INTEGER,
+                            graph_id INTEGER,
+                            preset_id INTEGER,
+                            status TEXT,
+                            metrics TEXT,
+                            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            finished_at TIMESTAMP NULL
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS node_runs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id INTEGER,
+                            node_id TEXT,
+                            agent_name TEXT,
+                            status TEXT,
+                            input_ref TEXT,
+                            output_ref TEXT,
+                            metrics TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                session.commit()
+            logger.info("v8迁移完成：analysis_runs/node_runs 表创建成功")
+        except Exception as e:
+            logger.error(f"v8迁移失败: {e}")
+            raise
+
+    def _migrate_to_v9(self):
+        """迁移到版本9：新增artifacts表"""
+        try:
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS artifacts (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            run_id INT,
+                            node_id VARCHAR(100),
+                            type VARCHAR(50),
+                            content LONGTEXT,
+                            metadata_json LONGTEXT,
+                            tags VARCHAR(255),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                else:
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS artifacts (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id INTEGER,
+                            node_id TEXT,
+                            type TEXT,
+                            content TEXT,
+                            metadata_json TEXT,
+                            tags TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                session.commit()
+            logger.info("v9迁移完成：artifacts 表创建成功")
+        except Exception as e:
+            logger.error(f"v9迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:

@@ -3,7 +3,8 @@ import type {
   AnalyzeRequest, TestApiRequest, TestApiResponse, SearchResult, 
   LoginRequest, LoginResponse, UserRegisterRequest, UserProfile,
   UserFavorite, FavoriteRequest, AnalysisHistoryItem, 
-  UserSettings, UserSettingsRequest, CreateConversationRequest, Conversation, ConversationMessage 
+  UserSettings, UserSettingsRequest, CreateConversationRequest, Conversation, ConversationMessage,
+  AgentPreset
 } from '@/types';
 
 // API前缀
@@ -308,6 +309,16 @@ export const apiService = {
     return axiosInstance.post('/analyze', request, {
       responseType: 'stream'
     });
+  },
+
+  // 获取多Agent预设
+  getAgentPresets: async (): Promise<AgentPreset[]> => {
+    try {
+      const response = await axiosInstance.get('/agent/presets');
+      return response.data.presets || [];
+    } catch (error) {
+      return [];
+    }
   },
 
   // 测试API连接

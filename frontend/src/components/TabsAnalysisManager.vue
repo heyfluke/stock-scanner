@@ -62,12 +62,8 @@
 import { ref, onMounted, computed, onBeforeUnmount } from 'vue';
 import { 
   NCard, 
-  NIcon, 
-  NSpace, 
-  NButton,
   NTabs,
   NTabPane,
-  NCollapseTransition,
   useMessage,
   useDialog
 } from 'naive-ui';
@@ -181,8 +177,8 @@ const createNewAnalysisTab = async (config: any) => {
   // 保存标签页状态
   saveTabs();
   
-  // 立即开始分析
-  startTabAnalysis(newTab);
+  // 立即开始分析（将 preset_id 传入请求体）
+  startTabAnalysis(newTab, config.presetId);
 };
 
 // 显示替换最旧标签页的确认对话框
@@ -249,7 +245,7 @@ const updateTabTitle = (tabId: string, newTitle: string) => {
 };
 
 // 启动标签页分析
-const startTabAnalysis = async (tab: AnalysisTab) => {
+const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
   // 更新分析状态
   tab.hasStartedAnalysis = true;
   tab.isAnalyzing = true;
@@ -261,7 +257,8 @@ const startTabAnalysis = async (tab: AnalysisTab) => {
     const requestData = {
       stock_codes: Array.isArray(tab.config.stockCodes) ? tab.config.stockCodes : [tab.config.stockCodes],
       market_type: tab.config.marketType,
-      analysis_days: tab.config.analysisDays
+      analysis_days: tab.config.analysisDays,
+      preset_id: presetId || 'standard'
     } as any;
     
     // 添加自定义API配置
