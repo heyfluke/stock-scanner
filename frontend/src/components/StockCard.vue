@@ -2410,6 +2410,76 @@ defineExpose({
   display: none;
 }
 
+/* 折叠组件样式 */
+.analysis-result :deep(details.analysis-fold) {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(32, 128, 240, 0.15);
+  transition: all 0.3s ease;
+}
+
+.analysis-result :deep(details.analysis-fold:hover) {
+  background-color: rgba(32, 128, 240, 0.08);
+  border-color: rgba(32, 128, 240, 0.25);
+}
+
+.analysis-result :deep(details.analysis-fold > summary) {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #2080f0;
+  padding: 0.5rem;
+  margin: -0.75rem -0.75rem 0.5rem -0.75rem;
+  background-color: rgba(32, 128, 240, 0.08);
+  border-radius: 6px 6px 0 0;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.analysis-result :deep(details.analysis-fold > summary:hover) {
+  background-color: rgba(32, 128, 240, 0.12);
+}
+
+.analysis-result :deep(details.analysis-fold > summary::before) {
+  content: '▶';
+  display: inline-block;
+  margin-right: 0.5rem;
+  transition: transform 0.2s ease;
+  font-size: 0.8rem;
+}
+
+.analysis-result :deep(details.analysis-fold[open] > summary::before) {
+  transform: rotate(90deg);
+}
+
+.analysis-result :deep(details.analysis-fold[open] > summary) {
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+}
+
+/* 折叠内容区域 */
+.analysis-result :deep(details.analysis-fold > *:not(summary)) {
+  padding-left: 0.5rem;
+}
+
+/* 移动端优化折叠组件 */
+@media (max-width: 768px) {
+  .analysis-result :deep(details.analysis-fold) {
+    margin: 0.75rem 0;
+    padding: 0.6rem;
+  }
+  
+  .analysis-result :deep(details.analysis-fold > summary) {
+    font-size: 0.9rem;
+    padding: 0.4rem;
+    margin: -0.6rem -0.6rem 0.4rem -0.6rem;
+  }
+}
+
 .chart-container {
   margin-top: 16px;
   height: 400px; /* 明确图表容器高度 */

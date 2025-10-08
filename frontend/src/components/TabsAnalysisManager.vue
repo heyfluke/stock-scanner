@@ -454,7 +454,14 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     }
     
     if (data.analysis !== undefined) {
-      stock.analysis = data.analysis;
+      // 如果analysis包含<final>标签，说明这是综合决策结果，应该追加而不是覆盖
+      if (data.analysis.includes('<final>')) {
+        console.log('📥 收到final块，追加到现有分析内容');
+        stock.analysis = (stock.analysis || '') + data.analysis;
+      } else {
+        // 否则直接设置（适用于非多角色模式）
+        stock.analysis = data.analysis;
+      }
     }
     
     if (data.ai_analysis_chunk !== undefined) {
