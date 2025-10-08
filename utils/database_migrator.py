@@ -877,25 +877,51 @@ class DatabaseMigrator:
             with Session(self.engine) as session:
                 database_url = str(self.engine.url)
                 if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
-                    # MySQL
-                    session.execute(text("""
-                        ALTER TABLE analysis_history 
-                        ADD COLUMN analysis_id VARCHAR(36) NULL,
-                        ADD INDEX idx_analysis_id (analysis_id)
+                    # MySQL - 检查列是否存在
+                    result = session.execute(text("""
+                        SELECT COUNT(*) as count
+                        FROM information_schema.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = 'analysis_history'
+                        AND COLUMN_NAME = 'analysis_id'
                     """))
+                    column_exists = result.scalar() > 0
+                    
+                    if not column_exists:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN analysis_id VARCHAR(36) NULL,
+                            ADD INDEX idx_analysis_id (analysis_id)
+                        """))
+                        logger.info("v10迁移：MySQL添加analysis_id字段成功")
+                    else:
+                        logger.info("v10迁移：analysis_id字段已存在，跳过添加")
                 else:
-                    # SQLite
-                    session.execute(text("""
-                        ALTER TABLE analysis_history 
-                        ADD COLUMN analysis_id TEXT
+                    # SQLite - 检查列是否存在
+                    result = session.execute(text("""
+                        SELECT COUNT(*) as count
+                        FROM pragma_table_info('analysis_history')
+                        WHERE name = 'analysis_id'
                     """))
+                    column_exists = result.scalar() > 0
+                    
+                    if not column_exists:
+                        session.execute(text("""
+                            ALTER TABLE analysis_history 
+                            ADD COLUMN analysis_id TEXT
+                        """))
+                        logger.info("v10迁移：SQLite添加analysis_id字段成功")
+                    else:
+                        logger.info("v10迁移：analysis_id字段已存在，跳过添加")
+                    
+                    # 索引使用 IF NOT EXISTS，总是安全执行
                     session.execute(text("""
                         CREATE INDEX IF NOT EXISTS idx_analysis_id 
                         ON analysis_history (analysis_id)
                     """))
                 
                 session.commit()
-                logger.info("v10迁移完成：analysis_history表添加analysis_id字段成功")
+                logger.info("v10迁移完成：analysis_history表处理成功")
         except Exception as e:
             logger.error(f"v10迁移失败: {e}")
             raise

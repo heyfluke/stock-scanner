@@ -264,7 +264,18 @@ class AgentOrchestrator:
                     logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符")
                 except Exception as e:
                     logger.exception(f"Role {role_name} generation failed for stock {code}")
-                    role_text = f"该角色生成失败: {str(e)}"
+                    # 角色分析失败时，发送错误消息并终止整个分析
+                    error_msg = f"角色 {role_name} 分析失败: {str(e)}"
+                    if "ReadTimeout" in str(type(e).__name__) or "timeout" in str(e).lower():
+                        error_msg = f"角色 {role_name} 分析超时（可能是AI服务响应慢或超时设置过短）"
+                    
+                    yield json.dumps({
+                        "stock_code": code,
+                        "status": "error",
+                        "error": error_msg
+                    }, ensure_ascii=False)
+                    return  # 终止整个分析流程
+                
                 collected_text += f"\n\n[{role_name}]\n{role_text}"
                 # 将每个角色包装为analysis过程
                 yield json.dumps({
@@ -287,7 +298,17 @@ class AgentOrchestrator:
                 logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符")
             except Exception as e:
                 logger.exception(f"综合决策官执行失败: {e}")
-                final_text = f"综合者执行失败: {e}"
+                # 综合决策官失败时，发送错误消息并终止
+                error_msg = f"综合决策官分析失败: {str(e)}"
+                if "ReadTimeout" in str(type(e).__name__) or "timeout" in str(e).lower():
+                    error_msg = f"综合决策官分析超时（可能是AI服务响应慢或超时设置过短）"
+                
+                yield json.dumps({
+                    "stock_code": code,
+                    "status": "error",
+                    "error": error_msg
+                }, ensure_ascii=False)
+                return  # 终止整个分析流程
 
             # Extract recommendation using existing helper
             rec_text = AIAnalyzer(
