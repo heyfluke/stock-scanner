@@ -96,6 +96,8 @@ interface AnalysisTab {
   analysisCompleted: boolean;
   // 历史记录ID（如果从历史记录恢复的话）
   historyId?: number;
+  // 分析UUID（用于历史跳转）
+  analysisId?: string;
 }
 
 // 使用Naive UI的组件API
@@ -144,6 +146,7 @@ const generateId = () => {
 
 // 创建新的分析标签页
 const createNewAnalysisTab = async (config: any) => {
+  console.log('[Tabs] createNewAnalysisTab called with config:', config);
   // 检查标签页数量限制
   if (analysisTabs.value.length >= maxTabs) {
     const shouldReplace = await showReplaceOldestTabDialog();
@@ -178,6 +181,7 @@ const createNewAnalysisTab = async (config: any) => {
   saveTabs();
   
   // 立即开始分析（将 preset_id 传入请求体）
+  console.log('[Tabs] starting analysis for tab:', newTab.id, 'presetId:', config.presetId);
   startTabAnalysis(newTab, config.presetId);
 };
 
@@ -246,6 +250,7 @@ const updateTabTitle = (tabId: string, newTitle: string) => {
 
 // 启动标签页分析
 const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
+  console.log('[Tabs] startTabAnalysis tab:', tab.id, 'presetId:', presetId);
   // 更新分析状态
   tab.hasStartedAnalysis = true;
   tab.isAnalyzing = true;
@@ -330,6 +335,7 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
       for (const line of lines) {
         if (line.trim()) {
           try {
+            console.log('[Tabs] stream line:', line.substring(0, 200) + '...');
             processTabStreamData(tab, line);
           } catch (e: Error | unknown) {
             console.error('处理数据流时出错:', e);
@@ -372,6 +378,13 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
 const processTabStreamData = (tab: AnalysisTab, text: string) => {
   try {
     const data = JSON.parse(text);
+    console.log('[Tabs] parsed chunk keys:', Object.keys(data));
+    
+    // 处理orchestrator初始化消息，提取analysis_id
+    if (data.orchestrator && data.orchestrator.analysis_id) {
+      tab.analysisId = data.orchestrator.analysis_id;
+      console.log('[Tabs] orchestrator init, analysis_id:', tab.analysisId);
+    }
     
     if (data.stream_type === 'single' || data.stream_type === 'batch') {
       handleTabStreamInit(tab, data);
@@ -402,6 +415,7 @@ const processTabStreamData = (tab: AnalysisTab, text: string) => {
 
 // 处理标签页流式初始化消息
 const handleTabStreamInit = (tab: AnalysisTab, data: any) => {
+  console.log('[Tabs] handleTabStreamInit:', data);
   if (data.stream_type === 'single' && data.stock_code) {
     tab.analyzedStocks = [{
       code: data.stock_code,
@@ -422,6 +436,7 @@ const handleTabStreamInit = (tab: AnalysisTab, data: any) => {
 
 // 处理标签页流式更新消息
 const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
+  console.log('[Tabs] handleTabStreamUpdate for', data.stock_code, 'status:', data.status, 'has chunk:', 'ai_analysis_chunk' in data, 'has analysis:', 'analysis' in data);
   const stockIndex = tab.analyzedStocks.findIndex((s: StockInfo) => s.code === data.stock_code);
   
   if (stockIndex >= 0) {
@@ -443,8 +458,11 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     }
     
     if (data.ai_analysis_chunk !== undefined) {
+      console.log('📥 收到ai_analysis_chunk，长度:', data.ai_analysis_chunk.length);
+      console.log('📥 chunk内容预览:', data.ai_analysis_chunk.substring(0, 100) + '...');
       stock.analysis = (stock.analysis || '') + data.ai_analysis_chunk;
       stock.analysisStatus = 'analyzing';
+      console.log('📥 更新后analysis总长度:', stock.analysis.length);
     }
     
     if (data.error !== undefined) {
@@ -542,10 +560,10 @@ const handleRestoreHistory = (history: any) => {
   try {
     message.info('正在恢复历史分析结果...');
     
-    // 检查是否已经存在相同历史记录ID的标签页（只有保存到数据库的分析才有ID）
+    // 检查是否已经存在相同历史记录ID或analysisId的标签页
     let existingTab = null;
     if (history.id) {
-      // 只有保存到数据库的历史记录才有ID，才需要检查排重
+      // 首先检查historyId
       existingTab = analysisTabs.value.find(tab => 
         tab.historyId && tab.historyId === history.id
       );
@@ -554,6 +572,19 @@ const handleRestoreHistory = (history: any) => {
         // 如果已存在相同历史记录的标签页，直接切换到该标签页
         activeTabId.value = existingTab.id;
         message.success('已切换到现有的历史分析标签页');
+        return;
+      }
+    }
+    
+    // 如果历史记录有analysisId，也检查是否已存在
+    if (history.analysis_id) {
+      existingTab = analysisTabs.value.find(tab => 
+        tab.analysisId && tab.analysisId === history.analysis_id
+      );
+      
+      if (existingTab) {
+        activeTabId.value = existingTab.id;
+        message.success('已切换到现有的分析标签页');
         return;
       }
     }

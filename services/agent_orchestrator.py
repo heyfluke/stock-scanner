@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import AsyncGenerator, Dict, List, Optional
 
 from utils.logger import get_logger
@@ -132,11 +133,15 @@ class AgentOrchestrator:
         preset = self.get_preset(preset_id)
         preset_key = preset.get("id") if preset else "standard"
 
+        # Generate unique analysis ID
+        analysis_id = str(uuid.uuid4())
+        
         # Emit a small orchestrator init message (non-breaking, optional fields)
         init_msg = {
             "orchestrator": {
                 "preset_id": preset_key,
                 "status": "initialized",
+                "analysis_id": analysis_id,
             }
         }
         yield json.dumps(init_msg, ensure_ascii=False)
@@ -243,7 +248,9 @@ class AgentOrchestrator:
                 custom_api_timeout=self._api_timeout,
             )
             collected_text = ""
-            for role_name, tmpl in role_templates:
+            for idx, (role_name, tmpl) in enumerate(role_templates, start=1):
+                logger.info(f"开始调用角色 {role_name} 分析股票 {code} (第{idx}/{len(role_templates)}个角色)")
+                
                 prompt = tmpl.format(
                     days=analysis_days,
                     summary=technical_summary,
@@ -254,16 +261,22 @@ class AgentOrchestrator:
                 )
                 try:
                     role_text = await ai.get_completion(prompt, stream=False)
+                    logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符")
                 except Exception as e:
-                    role_text = f"该角色生成失败: {e}"
+                    logger.exception(f"Role {role_name} generation failed for stock {code}")
+                    role_text = f"该角色生成失败: {str(e)}"
                 collected_text += f"\n\n[{role_name}]\n{role_text}"
+                # 将每个角色包装为analysis过程
                 yield json.dumps({
                     "stock_code": code,
-                    "ai_analysis_chunk": f"\n\n### {role_name}\n{role_text}",
-                    "status": "analyzing"
+                    "ai_analysis_chunk": f"<analysis>\n\n### {role_name}\n{role_text}\n</analysis>",
+                    "status": "analyzing",
+                    "role": role_name,
+                    "order": idx
                 }, ensure_ascii=False)
 
             # Synthesizer
+            logger.info(f"开始调用综合决策官汇总所有角色结论 (股票: {code})")
             synth_prompt = (
                 "你是综合决策官，汇总下列多角色结论，按统一结构输出: \n"
                 "- 结论(买入/持有/卖出/观望)\n- 证据(3-5条)\n- 行动(入场区间/止损/目标位/仓位/时间框)\n- 风险(2-3条与触发条件)\n- 置信度(0-1)\n\n"
@@ -271,7 +284,9 @@ class AgentOrchestrator:
             )
             try:
                 final_text = await ai.get_completion(synth_prompt, stream=False)
+                logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符")
             except Exception as e:
+                logger.exception(f"综合决策官执行失败: {e}")
                 final_text = f"综合者执行失败: {e}"
 
             # Extract recommendation using existing helper
@@ -282,10 +297,13 @@ class AgentOrchestrator:
                 custom_api_timeout=self._api_timeout,
             )._extract_recommendation(final_text)
 
+            # 最终输出只包含综合者结论，analysis过程已在流式输出中处理
+            final_full_text = f"<final>### 综合决策官\n\n{final_text}</final>"
+
             yield json.dumps({
                 "stock_code": code,
                 "status": "completed",
-                "analysis": final_text,
+                "analysis": final_full_text,
                 "recommendation": rec_text
             }, ensure_ascii=False)
 

@@ -8,6 +8,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-http://mirrors.cloud.tencent.com/npm/}
     container_name: stock-scanner-app
     ports:
       - "8888:8888"

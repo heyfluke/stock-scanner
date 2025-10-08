@@ -388,6 +388,12 @@ class DatabaseMigrator:
                 "name": "add_artifacts_table",
                 "description": "新增artifacts表用于存储中间产物与结果",
                 "migrate": self._migrate_to_v9
+            },
+            {
+                "version": 10,
+                "name": "add_analysis_id_to_history",
+                "description": "为analysis_history表添加analysis_id字段用于历史跳转",
+                "migrate": self._migrate_to_v10
             }
         ]
     
@@ -863,6 +869,35 @@ class DatabaseMigrator:
             logger.info("v9迁移完成：artifacts 表创建成功")
         except Exception as e:
             logger.error(f"v9迁移失败: {e}")
+            raise
+
+    def _migrate_to_v10(self):
+        """迁移到版本10：为analysis_history表添加analysis_id字段"""
+        try:
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL
+                    session.execute(text("""
+                        ALTER TABLE analysis_history 
+                        ADD COLUMN analysis_id VARCHAR(36) NULL,
+                        ADD INDEX idx_analysis_id (analysis_id)
+                    """))
+                else:
+                    # SQLite
+                    session.execute(text("""
+                        ALTER TABLE analysis_history 
+                        ADD COLUMN analysis_id TEXT
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_analysis_id 
+                        ON analysis_history (analysis_id)
+                    """))
+                
+                session.commit()
+                logger.info("v10迁移完成：analysis_history表添加analysis_id字段成功")
+        except Exception as e:
+            logger.error(f"v10迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:

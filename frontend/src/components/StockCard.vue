@@ -236,8 +236,6 @@ import {
   CopyOutline,
   HourglassOutline,
   ReloadOutline,
-  CheckmarkCircleOutline,
-  SyncOutline,
   HeartOutline,
   ShareOutline,
   ChatbubbleEllipsesOutline,
@@ -275,7 +273,6 @@ const chartInstance = ref<echarts.ECharts | null>(null);
 const chartOption = ref<echarts.EChartsOption>({});
 const showBollinger = ref(false);
 const chartInitialized = ref(false);
-const lastChartDataLength = ref(0);
 const lastConfigHash = ref('');
 const chartRef = ref<InstanceType<typeof VChart> | null>(null);
 
@@ -666,7 +663,7 @@ const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
 
 // 监听分析内容变化
-watch(() => props.stock.analysis, (newVal, oldVal) => {
+watch(() => props.stock.analysis, (newVal) => {
   if (newVal && props.stock.analysisStatus === 'analyzing') {
     lastAnalysisLength.value = newVal.length;
     lastAnalysisText.value = newVal;
@@ -676,12 +673,49 @@ watch(() => props.stock.analysis, (newVal, oldVal) => {
 // 分析内容的解析
 const parsedAnalysis = computed(() => {
   if (props.stock.analysis) {
-    let result = parseMarkdown(props.stock.analysis);
+    let content = props.stock.analysis;
+    console.log('🔍 开始解析分析内容，长度:', content.length);
+    console.log('🔍 原始内容预览:', content.substring(0, 200) + '...');
     
-    // 为关键词添加样式类
-    result = highlightKeywords(result);
+    // 检查是否包含特殊标签
+    const hasAnalysis = content.includes('<analysis>');
+    const hasFinal = content.includes('<final>');
+    console.log('🔍 标签检查 - analysis:', hasAnalysis, 'final:', hasFinal);
     
-    return result;
+    // 处理analysis和final标签
+    let result = content;
+    const defaultOpenAttr = props.stock.analysisStatus === 'analyzing' ? ' open' : '';
+    
+    // 将所有analysis块包装为原生可折叠组件（details/summary），流式中默认展开，完成后默认折叠
+    const analysisMatches = content.match(/<analysis>(.*?)<\/analysis>/gs);
+    console.log('🔍 找到analysis块数量:', analysisMatches ? analysisMatches.length : 0);
+    
+    result = result.replace(/<analysis>(.*?)<\/analysis>/gs, (_m, analysisContent) => {
+      console.log('📦 解析analysis块，长度:', analysisContent.length);
+      console.log('📦 analysis内容预览:', analysisContent.substring(0, 100) + '...');
+      return `<details class="analysis-fold"${defaultOpenAttr}><summary>分析过程</summary>${parseMarkdown(analysisContent)}</details>`;
+    });
+    
+    // 处理final块
+    const finalMatches = content.match(/<final>(.*?)<\/final>/gs);
+    console.log('🔍 找到final块数量:', finalMatches ? finalMatches.length : 0);
+    
+    result = result.replace(/<final>(.*?)<\/final>/gs, (_m, finalContent) => {
+      console.log('📦 解析final块，长度:', finalContent.length);
+      console.log('📦 final内容预览:', finalContent.substring(0, 100) + '...');
+      return parseMarkdown(finalContent);
+    });
+    
+    // 如果没有特殊标签，直接解析markdown
+    if (!hasAnalysis && !hasFinal) {
+      console.log('🔍 没有特殊标签，使用默认markdown解析');
+      result = parseMarkdown(content);
+    }
+    
+    console.log('✅ 最终解析结果长度:', result.length);
+    console.log('✅ 最终结果预览:', result.substring(0, 200) + '...');
+    
+    return highlightKeywords(result);
   }
   return '';
 });

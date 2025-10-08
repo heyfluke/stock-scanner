@@ -68,7 +68,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { 
   NCard, 
   NIcon, 
@@ -129,6 +129,9 @@ const { copy } = useClipboard();
 // 使用计算属性来访问分析状态
 const isAnalyzing = computed(() => props.tabData.isAnalyzing);
 const analyzedStocks = computed(() => props.tabData.analyzedStocks);
+onMounted(() => {
+  console.log('[Panel] mounted with stocks:', analyzedStocks.value.length);
+});
 
 
 

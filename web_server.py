@@ -662,6 +662,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             collected_analysis_result = {}
             collected_ai_output = ""
             collected_chart_data = {}
+            current_analysis_id = None  # 存储当前分析的UUID
             
             if len(stock_codes) == 1:
                 # 单个股票分析流式处理
@@ -682,6 +683,11 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                         # 收集chunk数据
                         try:
                             chunk_data = json.loads(chunk)
+                            
+                            # 提取analysis_id
+                            if "orchestrator" in chunk_data and "analysis_id" in chunk_data["orchestrator"]:
+                                current_analysis_id = chunk_data["orchestrator"]["analysis_id"]
+                            
                             if "stock_code" in chunk_data and "score" in chunk_data:
                                 collected_analysis_result[stock_code] = chunk_data
                             if "ai_analysis_chunk" in chunk_data:
@@ -833,7 +839,8 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                         analysis_days,
                         analysis_result=collected_analysis_result,
                         ai_output=ai_output_text,
-                        chart_data=collected_chart_data
+                        chart_data=collected_chart_data,
+                        analysis_id=current_analysis_id
                     )
                     logger.info(f"历史记录更新成功，ID: {history_id}")
                 except Exception as e:

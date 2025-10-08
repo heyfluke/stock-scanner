@@ -49,6 +49,7 @@ class AnalysisHistory(SQLModel, table=True):
     analysis_result: Optional[str] = Field(default=None)  # JSON格式，完整的股票分析数据
     ai_output: Optional[str] = Field(default=None)  # AI分析文本输出
     chart_data: Optional[str] = Field(default=None)  # 图表数据，JSON格式
+    analysis_id: Optional[str] = Field(default=None, max_length=36)  # 分析UUID，用于历史跳转
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Conversation(SQLModel, table=True):
@@ -321,7 +322,8 @@ class UserService:
                             market_type: str, analysis_days: int, 
                             analysis_result: Optional[Dict[str, Any]] = None,
                             ai_output: Optional[str] = None,
-                            chart_data: Optional[Dict[str, Any]] = None) -> Optional[int]:
+                            chart_data: Optional[Dict[str, Any]] = None,
+                            analysis_id: Optional[str] = None) -> Optional[int]:
         """保存分析历史"""
         try:
             with Session(self.engine) as session:
@@ -332,7 +334,8 @@ class UserService:
                     analysis_days=analysis_days,
                     analysis_result=json.dumps(analysis_result) if analysis_result else None,
                     ai_output=ai_output,
-                    chart_data=json.dumps(chart_data) if chart_data else None
+                    chart_data=json.dumps(chart_data) if chart_data else None,
+                    analysis_id=analysis_id
                 )
                 
                 session.add(history)
@@ -366,6 +369,7 @@ class UserService:
                             "analysis_result": json.loads(history.analysis_result) if history.analysis_result else None,
                             "ai_output": history.ai_output,
                             "chart_data": json.loads(history.chart_data) if history.chart_data else None,
+                            "analysis_id": history.analysis_id,
                             "created_at": history.created_at.isoformat()
                         })
                     except json.JSONDecodeError as e:
