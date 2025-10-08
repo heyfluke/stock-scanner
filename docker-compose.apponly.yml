@@ -1,0 +1,34 @@
+# 仅应用容器的 Docker Compose 配置
+# 适用于本地开发和简单部署，不包含 nginx 反向代理
+
+services:
+  app:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-http://mirrors.cloud.tencent.com/npm/}
+    container_name: stock-scanner-app-only
+    ports:
+      - "8888:8888"
+    environment:
+      - API_KEY=${API_KEY}
+      - API_URL=${API_URL}
+      - API_MODEL=${API_MODEL}
+      - API_TIMEOUT=${API_TIMEOUT}
+      - ANNOUNCEMENT_TEXT=${ANNOUNCEMENT_TEXT}
+      # 用户系统配置
+      - ENABLE_USER_SYSTEM=${ENABLE_USER_SYSTEM:-true}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=sqlite:///data/stock_scanner.db
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data  # 数据库持久化
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/api/config"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
