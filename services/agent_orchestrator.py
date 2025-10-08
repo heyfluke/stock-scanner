@@ -259,8 +259,30 @@ class AgentOrchestrator:
                     code=code,
                     prev=collected_text,
                 )
+                # 发送角色开始标记
+                yield json.dumps({
+                    "stock_code": code,
+                    "ai_analysis_chunk": f"<analysis>\n\n### {role_name}\n",
+                    "status": "analyzing",
+                    "role": role_name,
+                    "order": idx
+                }, ensure_ascii=False)
+                
+                role_text = ""
                 try:
-                    role_text = await ai.get_completion(prompt, stream=False)
+                    # 流式接收角色分析
+                    stream_gen = await ai.get_completion(prompt, stream=True)
+                    async for chunk in stream_gen:
+                        role_text += chunk
+                        # 实时发送流式片段
+                        yield json.dumps({
+                            "stock_code": code,
+                            "ai_analysis_chunk": chunk,
+                            "status": "analyzing",
+                            "role": role_name,
+                            "order": idx
+                        }, ensure_ascii=False)
+                    
                     logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符")
                 except Exception as e:
                     logger.exception(f"Role {role_name} generation failed for stock {code}")
@@ -276,15 +298,16 @@ class AgentOrchestrator:
                     }, ensure_ascii=False)
                     return  # 终止整个分析流程
                 
-                collected_text += f"\n\n[{role_name}]\n{role_text}"
-                # 将每个角色包装为analysis过程
+                # 发送角色结束标记
                 yield json.dumps({
                     "stock_code": code,
-                    "ai_analysis_chunk": f"<analysis>\n\n### {role_name}\n{role_text}\n</analysis>",
+                    "ai_analysis_chunk": "\n</analysis>",
                     "status": "analyzing",
                     "role": role_name,
                     "order": idx
                 }, ensure_ascii=False)
+                
+                collected_text += f"\n\n[{role_name}]\n{role_text}"
 
             # Synthesizer
             logger.info(f"开始调用综合决策官汇总所有角色结论 (股票: {code})")
@@ -293,8 +316,27 @@ class AgentOrchestrator:
                 "- 结论(买入/持有/卖出/观望)\n- 证据(3-5条)\n- 行动(入场区间/止损/目标位/仓位/时间框)\n- 风险(2-3条与触发条件)\n- 置信度(0-1)\n\n"
                 f"多角色结论如下:\n{collected_text}\n"
             )
+            
+            # 发送综合决策开始标记（使用 ai_analysis_chunk 保持一致性）
+            yield json.dumps({
+                "stock_code": code,
+                "ai_analysis_chunk": "<final>### 综合决策官\n\n",
+                "status": "analyzing"
+            }, ensure_ascii=False)
+            
+            final_text = ""
             try:
-                final_text = await ai.get_completion(synth_prompt, stream=False)
+                # 流式接收综合决策
+                stream_gen = await ai.get_completion(synth_prompt, stream=True)
+                async for chunk in stream_gen:
+                    final_text += chunk
+                    # 实时发送流式片段（使用 ai_analysis_chunk 总是追加）
+                    yield json.dumps({
+                        "stock_code": code,
+                        "ai_analysis_chunk": chunk,
+                        "status": "analyzing"
+                    }, ensure_ascii=False)
+                
                 logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符")
             except Exception as e:
                 logger.exception(f"综合决策官执行失败: {e}")
@@ -310,6 +352,13 @@ class AgentOrchestrator:
                 }, ensure_ascii=False)
                 return  # 终止整个分析流程
 
+            # 发送综合决策结束标记
+            yield json.dumps({
+                "stock_code": code,
+                "ai_analysis_chunk": "</final>",
+                "status": "analyzing"
+            }, ensure_ascii=False)
+
             # Extract recommendation using existing helper
             rec_text = AIAnalyzer(
                 custom_api_url=self._api_url,
@@ -318,13 +367,10 @@ class AgentOrchestrator:
                 custom_api_timeout=self._api_timeout,
             )._extract_recommendation(final_text)
 
-            # 最终输出只包含综合者结论，analysis过程已在流式输出中处理
-            final_full_text = f"<final>### 综合决策官\n\n{final_text}</final>"
-
+            # 发送完成状态
             yield json.dumps({
                 "stock_code": code,
                 "status": "completed",
-                "analysis": final_full_text,
                 "recommendation": rec_text
             }, ensure_ascii=False)
 

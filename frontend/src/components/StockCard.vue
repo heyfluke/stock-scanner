@@ -662,58 +662,93 @@ onBeforeUnmount(() => {
 const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
 
-// 监听分析内容变化
-watch(() => props.stock.analysis, (newVal) => {
+// 监听分析内容变化并自动滚动
+watch(() => props.stock.analysis, (newVal, oldVal) => {
   if (newVal && props.stock.analysisStatus === 'analyzing') {
     lastAnalysisLength.value = newVal.length;
     lastAnalysisText.value = newVal;
+    
+    // 如果内容增加了，自动滚动预览框到底部
+    if (oldVal && newVal.length > oldVal.length) {
+      nextTick(() => {
+        // 找到当前正在分析的预览框并滚动到底部
+        const previewBoxes = document.querySelectorAll('.analysis-preview-box .preview-box-content');
+        if (previewBoxes.length > 0) {
+          const lastBox = previewBoxes[previewBoxes.length - 1] as HTMLElement;
+          lastBox.scrollTop = lastBox.scrollHeight;
+        }
+      });
+    }
   }
 }, { immediate: true });
 
-// 分析内容的解析
+// 分析内容的解析 - 支持每个角色独立显示
 const parsedAnalysis = computed(() => {
   if (props.stock.analysis) {
     let content = props.stock.analysis;
-    console.log('🔍 开始解析分析内容，长度:', content.length);
-    console.log('🔍 原始内容预览:', content.substring(0, 200) + '...');
     
-    // 检查是否包含特殊标签
-    const hasAnalysis = content.includes('<analysis>');
-    const hasFinal = content.includes('<final>');
-    console.log('🔍 标签检查 - analysis:', hasAnalysis, 'final:', hasFinal);
+    let result = '';
+    let lastIndex = 0;
     
-    // 处理analysis和final标签
-    let result = content;
-    const defaultOpenAttr = props.stock.analysisStatus === 'analyzing' ? ' open' : '';
+    // 正则：匹配完整的 <analysis>...</analysis> 块
+    const completeAnalysisRegex = /<analysis>(.*?)<\/analysis>/gs;
     
-    // 将所有analysis块包装为原生可折叠组件（details/summary），流式中默认展开，完成后默认折叠
-    const analysisMatches = content.match(/<analysis>(.*?)<\/analysis>/gs);
-    console.log('🔍 找到analysis块数量:', analysisMatches ? analysisMatches.length : 0);
+    // 先处理所有完整的 analysis 块（已完成的角色）
+    const matches = [...content.matchAll(completeAnalysisRegex)];
     
-    result = result.replace(/<analysis>(.*?)<\/analysis>/gs, (_m, analysisContent) => {
-      console.log('📦 解析analysis块，长度:', analysisContent.length);
-      console.log('📦 analysis内容预览:', analysisContent.substring(0, 100) + '...');
-      return `<details class="analysis-fold"${defaultOpenAttr}><summary>分析过程</summary>${parseMarkdown(analysisContent)}</details>`;
-    });
+    for (const match of matches) {
+      // 添加匹配前的内容
+      result += content.substring(lastIndex, match.index);
+      
+      const analysisContent = match[1];
+      // 提取角色名
+      const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
+      const roleName = roleMatch ? roleMatch[1].trim() : '分析过程';
+      
+      // 已完成的角色：渲染为折叠组件
+      result += `<details class="analysis-fold"><summary>角色 - ${roleName}</summary>${parseMarkdown(analysisContent)}</details>`;
+      
+      lastIndex = match.index! + match[0].length;
+    }
     
-    // 处理final块
-    const finalMatches = content.match(/<final>(.*?)<\/final>/gs);
-    console.log('🔍 找到final块数量:', finalMatches ? finalMatches.length : 0);
+    // 处理剩余内容（可能包含未完成的analysis块）
+    const remaining = content.substring(lastIndex);
     
+    // 检查剩余内容中是否有未闭合的 <analysis> 标签
+    const lastAnalysisIndex = remaining.lastIndexOf('<analysis>');
+    const lastAnalysisCloseIndex = remaining.lastIndexOf('</analysis>');
+    
+    // 如果最后一个<analysis>在最后一个</analysis>之后，说明有未闭合的块
+    if (lastAnalysisIndex !== -1 && lastAnalysisIndex > lastAnalysisCloseIndex) {
+      // 添加 <analysis> 标签前的所有内容
+      result += remaining.substring(0, lastAnalysisIndex);
+      
+      // 提取未闭合的analysis内容（从<analysis>之后到结尾）
+      const analysisContent = remaining.substring(lastAnalysisIndex + '<analysis>'.length);
+      
+      // 提取角色名
+      const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
+      const roleName = roleMatch ? roleMatch[1].trim() : '分析中...';
+      
+      // 正在分析的角色：渲染为5行滚动预览
+      result += `<div class="analysis-preview-box" data-role="${roleName}">
+        <div class="preview-box-header">角色 - ${roleName}</div>
+        <div class="preview-box-content">${analysisContent}</div>
+      </div>`;
+    } else {
+      // 没有未闭合的analysis，添加所有剩余内容
+      result += remaining;
+    }
+    
+    // 处理 final 块
     result = result.replace(/<final>(.*?)<\/final>/gs, (_m, finalContent) => {
-      console.log('📦 解析final块，长度:', finalContent.length);
-      console.log('📦 final内容预览:', finalContent.substring(0, 100) + '...');
       return parseMarkdown(finalContent);
     });
     
-    // 如果没有特殊标签，直接解析markdown
-    if (!hasAnalysis && !hasFinal) {
-      console.log('🔍 没有特殊标签，使用默认markdown解析');
+    // 如果没有任何特殊标签，直接解析markdown
+    if (!content.includes('<analysis>') && !content.includes('<final>')) {
       result = parseMarkdown(content);
     }
-    
-    console.log('✅ 最终解析结果长度:', result.length);
-    console.log('✅ 最终结果预览:', result.substring(0, 200) + '...');
     
     return highlightKeywords(result);
   }
@@ -1567,6 +1602,70 @@ defineExpose({
   contain: content;
 }
 
+/* 分析预览框样式（正在分析的角色） */
+.analysis-result :deep(.analysis-preview-box) {
+  margin: 1rem 0;
+  padding: 0;
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(32, 128, 240, 0.15);
+  overflow: hidden;
+  animation: fadePulse 2s infinite;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-header) {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #2080f0;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(32, 128, 240, 0.08);
+  border-bottom: 1px solid rgba(32, 128, 240, 0.15);
+  display: flex;
+  align-items: center;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-header::after) {
+  content: '|';
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: var(--n-info-color);
+  animation: blink 1s step-end infinite;
+  font-weight: bold;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-content) {
+  padding: 0.75rem;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--n-text-color-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* 限制最大显示5行 */
+  max-height: calc(1.6em * 5);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 预览框滚动条样式 */
+.analysis-result :deep(.analysis-preview-box .preview-box-content)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-content)::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-content)::-webkit-scrollbar-thumb {
+  background: rgba(32, 128, 240, 0.3);
+  border-radius: 3px;
+}
+
+.analysis-result :deep(.analysis-preview-box .preview-box-content)::-webkit-scrollbar-thumb:hover {
+  background: rgba(32, 128, 240, 0.5);
+}
+
 /* 改进流式输出的动画效果，消除闪烁 */
 .analysis-streaming > :deep(*) {
   animation: none;
@@ -2006,6 +2105,23 @@ defineExpose({
     background-color: rgba(24, 160, 88, 0.02);
   }
   
+  /* 移动端预览框样式 */
+  .analysis-result :deep(.analysis-preview-box) {
+    margin: 0.75rem 0;
+  }
+  
+  .analysis-result :deep(.analysis-preview-box .preview-box-header) {
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+  }
+  
+  .analysis-result :deep(.analysis-preview-box .preview-box-content) {
+    font-size: 0.8rem;
+    padding: 0.6rem;
+    /* 移动端限制4行 */
+    max-height: calc(1.6em * 4);
+  }
+  
   /* 优化标题样式 */
   .analysis-result :deep(h1), 
   .analysis-result :deep(h2), 
@@ -2410,7 +2526,7 @@ defineExpose({
   display: none;
 }
 
-/* 折叠组件样式 */
+/* 折叠组件样式（分析完成后使用） */
 .analysis-result :deep(details.analysis-fold) {
   margin: 1rem 0;
   padding: 0.75rem;

@@ -71,6 +71,12 @@ fi
 echo "🔨 Building development image..."
 docker-compose -f docker-compose.dev.yml build app-dev
 
+# 检查是否传入 -d 参数（后台运行）
+DETACHED_MODE=false
+if [[ "$1" == "-d" ]]; then
+    DETACHED_MODE=true
+fi
+
 # 启动开发环境
 echo "🚀 Starting development environment..."
 echo ""
@@ -83,37 +89,45 @@ echo "🔧 Development features enabled:"
 echo "  - Hot reload on code changes"
 echo "  - Debug logging"
 echo "  - Code directory mounted"
-echo "  - Development database"
-echo ""
-echo "📝 To view logs: docker-compose -f docker-compose.dev.yml logs -f app-dev"
-echo "🛑 To stop: docker-compose -f docker-compose.dev.yml down"
+echo "  - Development database (SQLite)"
 echo ""
 
-# 启动服务
-docker-compose -f docker-compose.dev.yml up -d
-
-# 等待服务启动
-echo "⏳ Waiting for services to start..."
-sleep 5
-
-# 检查服务状态
-if docker-compose -f docker-compose.dev.yml ps | grep -q "Up"; then
-    echo "✅ Development environment started successfully!"
+if [ "$DETACHED_MODE" = true ]; then
+    # 后台启动模式
+    echo "🔙 Starting in detached mode (background)..."
     echo ""
-    echo "🎯 Quick commands:"
-    echo "  - View logs: docker-compose -f docker-compose.dev.yml logs -f"
-    echo "  - Restart app: docker-compose -f docker-compose.dev.yml restart app-dev"
-    echo "  - Shell access: docker-compose -f docker-compose.dev.yml exec app-dev bash"
-    echo "  - Stop all: docker-compose -f docker-compose.dev.yml down"
-    echo ""
-    echo "🔍 Testing API..."
-    if curl -s http://localhost:8888/api/config > /dev/null; then
-        echo "✅ API is responding!"
+    docker-compose -f docker-compose.dev.yml up -d
+    
+    # 等待服务启动
+    echo "⏳ Waiting for services to start..."
+    sleep 5
+    
+    # 检查服务状态
+    if docker-compose -f docker-compose.dev.yml ps | grep -q "Up"; then
+        echo "✅ Development environment started successfully!"
+        echo ""
+        echo "🎯 Quick commands:"
+        echo "  - View logs: docker-compose -f docker-compose.dev.yml logs -f app-dev"
+        echo "  - Restart app: docker-compose -f docker-compose.dev.yml restart app-dev"
+        echo "  - Shell access: docker-compose -f docker-compose.dev.yml exec app-dev bash"
+        echo "  - Stop all: docker-compose -f docker-compose.dev.yml down"
+        echo ""
+        echo "🔍 Testing API..."
+        if curl -s http://localhost:8888/api/config > /dev/null; then
+            echo "✅ API is responding!"
+        else
+            echo "⚠️  API not responding yet, may need more time to start"
+        fi
     else
-        echo "⚠️  API not responding yet, may need more time to start"
+        echo "❌ Failed to start development environment"
+        echo "Check logs with: docker-compose -f docker-compose.dev.yml logs"
+        exit 1
     fi
 else
-    echo "❌ Failed to start development environment"
-    echo "Check logs with: docker-compose -f docker-compose.dev.yml logs"
-    exit 1
-fi 
+    # 交互启动模式（默认）
+    echo "🖥️  Starting in interactive mode..."
+    echo "📝 Press Ctrl+C to stop"
+    echo "🛑 To run in background, use: $0 -d"
+    echo ""
+    docker-compose -f docker-compose.dev.yml up
+fi

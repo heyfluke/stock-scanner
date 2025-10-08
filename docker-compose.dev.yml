@@ -19,7 +19,8 @@ services:
       # 用户系统配置
       - ENABLE_USER_SYSTEM=${ENABLE_USER_SYSTEM:-true}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - DATABASE_URL=mysql+pymysql://dev_user:dev_password@stock-scanner-mysql-dev:3306/stock_scanner_dev
+      # 数据库配置：默认使用SQLite，可通过环境变量切换到MySQL
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/stock_scanner.db}
       # 开发环境特定配置
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1

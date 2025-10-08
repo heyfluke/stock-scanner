@@ -335,7 +335,7 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
       for (const line of lines) {
         if (line.trim()) {
           try {
-            console.log('[Tabs] stream line:', line.substring(0, 200) + '...');
+            // console.log('[Tabs] stream line:', line.substring(0, 200) + '...');
             processTabStreamData(tab, line);
           } catch (e: Error | unknown) {
             console.error('处理数据流时出错:', e);
@@ -378,12 +378,12 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
 const processTabStreamData = (tab: AnalysisTab, text: string) => {
   try {
     const data = JSON.parse(text);
-    console.log('[Tabs] parsed chunk keys:', Object.keys(data));
+    // console.log('[Tabs] parsed chunk keys:', Object.keys(data));
     
     // 处理orchestrator初始化消息，提取analysis_id
     if (data.orchestrator && data.orchestrator.analysis_id) {
       tab.analysisId = data.orchestrator.analysis_id;
-      console.log('[Tabs] orchestrator init, analysis_id:', tab.analysisId);
+      // console.log('[Tabs] orchestrator init, analysis_id:', tab.analysisId);
     }
     
     if (data.stream_type === 'single' || data.stream_type === 'batch') {
@@ -436,7 +436,7 @@ const handleTabStreamInit = (tab: AnalysisTab, data: any) => {
 
 // 处理标签页流式更新消息
 const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
-  console.log('[Tabs] handleTabStreamUpdate for', data.stock_code, 'status:', data.status, 'has chunk:', 'ai_analysis_chunk' in data, 'has analysis:', 'analysis' in data);
+  // console.log('[Tabs] handleTabStreamUpdate for', data.stock_code, 'status:', data.status, 'has chunk:', 'ai_analysis_chunk' in data, 'has analysis:', 'analysis' in data);
   const stockIndex = tab.analyzedStocks.findIndex((s: StockInfo) => s.code === data.stock_code);
   
   if (stockIndex >= 0) {
@@ -465,11 +465,11 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     }
     
     if (data.ai_analysis_chunk !== undefined) {
-      console.log('📥 收到ai_analysis_chunk，长度:', data.ai_analysis_chunk.length);
-      console.log('📥 chunk内容预览:', data.ai_analysis_chunk.substring(0, 100) + '...');
+      // console.log('📥 收到ai_analysis_chunk，长度:', data.ai_analysis_chunk.length);
+      // console.log('📥 chunk内容预览:', data.ai_analysis_chunk.substring(0, 100) + '...');
       stock.analysis = (stock.analysis || '') + data.ai_analysis_chunk;
       stock.analysisStatus = 'analyzing';
-      console.log('📥 更新后analysis总长度:', stock.analysis.length);
+      // console.log('📥 更新后analysis总长度:', stock.analysis.length);
     }
     
     if (data.error !== undefined) {

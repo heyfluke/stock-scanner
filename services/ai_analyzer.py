@@ -87,9 +87,16 @@ class AIAnalyzer:
         import random
         return random.choice(self.conversation_prompts)
 
-    async def get_completion(self, prompt: str, stream: bool = False) -> str:
+    async def get_completion(self, prompt: str, stream: bool = False):
         """
-        使用当前模型与密钥执行一次性补全，返回完整文本（非流式）。
+        使用当前模型与密钥执行补全。
+        
+        Args:
+            prompt: 提示词
+            stream: 是否流式输出。如果为True，返回异步生成器；如果为False，返回字符串
+        
+        Returns:
+            str (当stream=False) 或 AsyncGenerator[str, None] (当stream=True)
         """
         api_url = APIUtils.format_api_url(self.API_URL)
         if not self.API_KEY or self.API_KEY.strip() == "":
@@ -102,19 +109,62 @@ class AIAnalyzer:
             "model": self.API_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7,
-            "stream": False
+            "stream": stream
         }
+        
+        if not stream:
+            # 非流式：一次性返回完整文本
+            async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
+                response = await client.post(api_url, json=request_data, headers=headers)
+                if response.status_code != 200:
+                    try:
+                        data = response.json()
+                        msg = data.get('error', {}).get('message', str(data))
+                    except Exception:
+                        msg = response.text
+                    raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
+                data = response.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        else:
+            # 流式：返回异步生成器
+            return self._stream_completion(api_url, request_data, headers)
+    
+    async def _stream_completion(self, api_url: str, request_data: dict, headers: dict):
+        """
+        流式补全的内部实现
+        """
         async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
-            response = await client.post(api_url, json=request_data, headers=headers)
-            if response.status_code != 200:
-                try:
-                    data = response.json()
-                    msg = data.get('error', {}).get('message', str(data))
-                except Exception:
-                    msg = response.text
-                raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
-            data = response.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            async with client.stream('POST', api_url, json=request_data, headers=headers) as response:
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    try:
+                        data = response.json()
+                        msg = data.get('error', {}).get('message', str(data))
+                    except Exception:
+                        msg = error_text.decode('utf-8')
+                    raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
+                
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    
+                    # 处理 SSE 格式：data: {...}
+                    if line.startswith('data: '):
+                        line = line[6:]
+                    
+                    # 跳过 [DONE] 标记
+                    if line.strip() == '[DONE]':
+                        break
+                    
+                    try:
+                        chunk_data = json.loads(line)
+                        delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                        content = delta.get('content', '')
+                        if content:
+                            yield content
+                    except json.JSONDecodeError:
+                        # 忽略无法解析的行
+                        continue
     
     async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
