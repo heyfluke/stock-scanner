@@ -1172,6 +1172,17 @@ const handleExportImage = async () => {
       }
     }
     
+    // 处理折叠的分析内容 - 临时展开所有 <details> 元素
+    const detailsElements = cardElement.querySelectorAll('details.analysis-fold') as NodeListOf<HTMLDetailsElement>;
+    const originalDetailsStates: boolean[] = [];
+    
+    detailsElements.forEach((details, index) => {
+      // 保存原始状态
+      originalDetailsStates[index] = details.open;
+      // 临时展开
+      details.open = true;
+    });
+    
     // 生成canvas
     const canvas = await html2canvas(cardElement, {
       useCORS: true,
@@ -1190,6 +1201,11 @@ const handleExportImage = async () => {
         item.style.cssText = originalItemStyles[index] || '';
       });
     }
+    
+    // 恢复 <details> 元素的原始状态
+    detailsElements.forEach((details, index) => {
+      details.open = originalDetailsStates[index];
+    });
     
     // 转换为图片并下载
     const imageUrl = canvas.toDataURL('image/png');
