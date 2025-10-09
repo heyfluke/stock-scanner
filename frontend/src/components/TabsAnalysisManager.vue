@@ -499,6 +499,7 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
     
     if (data.analysis_date) stock.analysis_date = data.analysis_date;
     if (data.chart_data) stock.chart_data = data.chart_data;
+    if (data.token_usage) stock.token_usage = data.token_usage;
     
     tab.analyzedStocks[stockIndex] = stock;
     

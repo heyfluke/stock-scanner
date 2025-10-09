@@ -121,13 +121,21 @@
       </div>
     </div>
     
-    <div class="analysis-date" v-if="stock.analysis_date">
-      <n-tag type="info" size="small">
-        <template #icon>
-          <n-icon><CalendarOutline /></n-icon>
-        </template>
-        分析日期: {{ formatDate(stock.analysis_date) }}
-      </n-tag>
+    <div class="analysis-meta" v-if="stock.analysis_date || stock.token_usage">
+      <n-space size="small">
+        <n-tag v-if="stock.analysis_date" type="info" size="small">
+          <template #icon>
+            <n-icon><CalendarOutline /></n-icon>
+          </template>
+          分析日期: {{ formatDate(stock.analysis_date) }}
+        </n-tag>
+        <n-tag v-if="stock.token_usage" :type="stock.token_usage.estimated ? 'warning' : 'success'" size="small">
+          <template #icon>
+            <n-icon><StatsChartOutline /></n-icon>
+          </template>
+          {{ formatTokenUsage(stock.token_usage) }}
+        </n-tag>
+      </n-space>
     </div>
     
     <div class="technical-indicators" v-if="hasAnyTechnicalIndicator">
@@ -274,7 +282,7 @@
 
 <script setup lang="ts">
 import { computed, watch, ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { NCard, NDivider, NIcon, NTag, NButton, NSwitch, useMessage } from 'naive-ui';
+import { NCard, NDivider, NIcon, NTag, NButton, NSwitch, NSpace, useMessage } from 'naive-ui';
 import { 
   AlertCircleOutline as AlertCircleIcon,
   CalendarOutline,
@@ -284,7 +292,8 @@ import {
   HeartOutline,
   ShareOutline,
   ChatbubbleEllipsesOutline,
-  ImageOutline
+  ImageOutline,
+  StatsChartOutline
 } from '@vicons/ionicons5';
 import html2canvas from 'html2canvas';
 import { parseMarkdown } from '@/utils';
@@ -955,6 +964,26 @@ function formatDate(dateStr: string | undefined | null): string {
   }
 }
 
+function formatTokenUsage(usage: any): string {
+  if (!usage) return '';
+  
+  if (usage.estimated) {
+    // 估算的token使用
+    return `消耗: ~${usage.total_tokens.toLocaleString()} tokens (估算)`;
+  } else {
+    // 精确的token使用
+    const parts = [];
+    if (usage.prompt_tokens !== undefined) {
+      parts.push(`输入: ${usage.prompt_tokens.toLocaleString()}`);
+    }
+    if (usage.completion_tokens !== undefined) {
+      parts.push(`输出: ${usage.completion_tokens.toLocaleString()}`);
+    }
+    parts.push(`总计: ${usage.total_tokens.toLocaleString()} tokens`);
+    return parts.join(' | ');
+  }
+}
+
 function getScoreClass(score: number): string {
   if (score >= 80) return 'score-high';
   if (score >= 70) return 'score-medium-high';
@@ -1590,6 +1619,12 @@ defineExpose({
 }
 
 .analysis-date {
+  margin: 0.5rem 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.analysis-meta {
   margin: 0.5rem 0;
   display: flex;
   justify-content: flex-end;

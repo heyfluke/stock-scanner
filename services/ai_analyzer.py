@@ -132,6 +132,7 @@ class AIAnalyzer:
     async def _stream_completion(self, api_url: str, request_data: dict, headers: dict):
         """
         流式补全的内部实现
+        Yields: (content_chunk, usage_info) 元组
         """
         async with httpx.AsyncClient(timeout=self.API_TIMEOUT) as client:
             async with client.stream('POST', api_url, json=request_data, headers=headers) as response:
@@ -144,6 +145,7 @@ class AIAnalyzer:
                         msg = error_text.decode('utf-8')
                     raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
                 
+                usage_info = None
                 async for line in response.aiter_lines():
                     if not line.strip():
                         continue
@@ -160,11 +162,20 @@ class AIAnalyzer:
                         chunk_data = json.loads(line)
                         delta = chunk_data.get('choices', [{}])[0].get('delta', {})
                         content = delta.get('content', '')
+                        
+                        # 提取usage信息（通常在最后一个chunk中）
+                        if 'usage' in chunk_data:
+                            usage_info = chunk_data['usage']
+                        
                         if content:
-                            yield content
+                            yield (content, usage_info)
                     except json.JSONDecodeError:
                         # 忽略无法解析的行
                         continue
+                
+                # 如果有usage信息但最后没有内容，单独yield一次
+                if usage_info:
+                    yield ('', usage_info)
     
     async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
         """
@@ -373,6 +384,7 @@ class AIAnalyzer:
                         buffer = ""
                         collected_messages = []
                         chunk_count = 0
+                        usage_info = None  # 收集usage信息
                         
                         async for chunk in response.aiter_text():
                             if chunk:
@@ -417,6 +429,11 @@ class AIAnalyzer:
                                         if finish_reason == "stop":
                                             logger.debug("收到finish_reason=stop，流结束")
                                             continue
+                                        
+                                        # 提取usage信息（通常在最后一个chunk中）
+                                        if 'usage' in chunk_data:
+                                            usage_info = chunk_data['usage']
+                                            logger.info(f"收到usage信息: {usage_info}")
                                         
                                         # 获取delta内容
                                         delta = chunk_data.get("choices", [{}])[0].get("delta", {})
@@ -477,12 +494,31 @@ class AIAnalyzer:
                         score = self._calculate_analysis_score(full_content, technical_summary)
                         
                         # 发送完成状态和评分、建议
-                        yield json.dumps({
+                        completion_data = {
                             "stock_code": stock_code,
                             "status": "completed",
                             "score": score,
                             "recommendation": recommendation
-                        })
+                        }
+                        
+                        # 添加token使用信息
+                        if usage_info:
+                            completion_data["token_usage"] = usage_info
+                            logger.info(f"标准分析完成，token使用（精确）: {usage_info}")
+                        else:
+                            # API不返回usage，使用字符数估算
+                            prompt_chars = len(prompt)
+                            output_chars = len(buffer)
+                            estimated_tokens = (prompt_chars + output_chars) // 3
+                            completion_data["token_usage"] = {
+                                "estimated": True,
+                                "total_tokens": estimated_tokens,
+                                "prompt_chars": prompt_chars,
+                                "output_chars": output_chars
+                            }
+                            logger.info(f"标准分析完成，估算token使用: ~{estimated_tokens} (输入{prompt_chars}字符 + 输出{output_chars}字符)")
+                        
+                        yield json.dumps(completion_data)
                 else:
                     # 非流式响应处理
                     response = await client.post(api_url, json=request_data, headers=headers)
@@ -501,6 +537,9 @@ class AIAnalyzer:
                     response_data = response.json()
                     analysis_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     
+                    # 提取usage信息
+                    usage_info = response_data.get('usage')
+                    
                     # 尝试从分析内容中提取投资建议
                     recommendation = self._extract_recommendation(analysis_text)
                     
@@ -508,7 +547,7 @@ class AIAnalyzer:
                     score = self._calculate_analysis_score(analysis_text, technical_summary)
                     
                     # 发送完整的分析结果
-                    yield json.dumps({
+                    completion_data = {
                         "stock_code": stock_code,
                         "status": "completed",
                         "analysis": analysis_text,
@@ -521,7 +560,26 @@ class AIAnalyzer:
                         "macd_signal": macd_signal_type,
                         "volume_status": volume_status,
                         "analysis_date": analysis_date
-                    })
+                    }
+                    
+                    # 添加token使用信息
+                    if usage_info:
+                        completion_data["token_usage"] = usage_info
+                        logger.info(f"标准分析完成（非流式），token使用（精确）: {usage_info}")
+                    else:
+                        # API不返回usage，使用字符数估算
+                        prompt_chars = len(prompt)
+                        output_chars = len(analysis_text)
+                        estimated_tokens = (prompt_chars + output_chars) // 3
+                        completion_data["token_usage"] = {
+                            "estimated": True,
+                            "total_tokens": estimated_tokens,
+                            "prompt_chars": prompt_chars,
+                            "output_chars": output_chars
+                        }
+                        logger.info(f"标准分析完成（非流式），估算token使用: ~{estimated_tokens}")
+                    
+                    yield json.dumps(completion_data)
                     
         except Exception as e:
             logger.error(f"AI分析出错: {str(e)}", exc_info=True)

@@ -187,6 +187,14 @@ class AgentOrchestrator:
         )
 
         for code in stock_codes:
+            # 初始化token使用统计
+            total_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost": 0.0  # 如果需要的话
+            }
+            
             # Init header
             yield json.dumps({"stream_type": "single", "stock_code": code}, ensure_ascii=False)
 
@@ -269,21 +277,46 @@ class AgentOrchestrator:
                 }, ensure_ascii=False)
                 
                 role_text = ""
+                role_usage = None
                 try:
                     # 流式接收角色分析
                     stream_gen = await ai.get_completion(prompt, stream=True)
-                    async for chunk in stream_gen:
+                    async for chunk_data in stream_gen:
+                        # chunk_data 现在是 (content, usage) 元组
+                        if isinstance(chunk_data, tuple):
+                            chunk, usage = chunk_data
+                            logger.debug(f"收到元组: chunk长度={len(chunk)}, usage={usage}")
+                        else:
+                            # 向后兼容：如果不是元组，当作纯内容处理
+                            chunk = chunk_data
+                            usage = None
+                            logger.debug(f"收到字符串: chunk长度={len(chunk)}")
+                        
                         role_text += chunk
+                        
+                        # 保存usage信息（如果有）
+                        if usage:
+                            role_usage = usage
+                            logger.info(f"角色 {role_name} 收到usage信息: {usage}")
+                        
                         # 实时发送流式片段
-                        yield json.dumps({
-                            "stock_code": code,
-                            "ai_analysis_chunk": chunk,
-                            "status": "analyzing",
-                            "role": role_name,
-                            "order": idx
-                        }, ensure_ascii=False)
+                        if chunk:  # 只发送有内容的chunk
+                            yield json.dumps({
+                                "stock_code": code,
+                                "ai_analysis_chunk": chunk,
+                                "status": "analyzing",
+                                "role": role_name,
+                                "order": idx
+                            }, ensure_ascii=False)
                     
-                    logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符")
+                    # 累积token使用
+                    if role_usage:
+                        total_usage["prompt_tokens"] += role_usage.get("prompt_tokens", 0)
+                        total_usage["completion_tokens"] += role_usage.get("completion_tokens", 0)
+                        total_usage["total_tokens"] += role_usage.get("total_tokens", 0)
+                        logger.info(f"累积后总token使用: {total_usage}")
+                    
+                    logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符，token使用: {role_usage}")
                 except Exception as e:
                     logger.exception(f"Role {role_name} generation failed for stock {code}")
                     # 角色分析失败时，发送错误消息并终止整个分析
@@ -325,19 +358,42 @@ class AgentOrchestrator:
             }, ensure_ascii=False)
             
             final_text = ""
+            final_usage = None
             try:
                 # 流式接收综合决策
                 stream_gen = await ai.get_completion(synth_prompt, stream=True)
-                async for chunk in stream_gen:
+                async for chunk_data in stream_gen:
+                    # chunk_data 现在是 (content, usage) 元组
+                    if isinstance(chunk_data, tuple):
+                        chunk, usage = chunk_data
+                    else:
+                        # 向后兼容：如果不是元组，当作纯内容处理
+                        chunk = chunk_data
+                        usage = None
+                    
                     final_text += chunk
-                    # 实时发送流式片段（使用 ai_analysis_chunk 总是追加）
-                    yield json.dumps({
-                        "stock_code": code,
-                        "ai_analysis_chunk": chunk,
-                        "status": "analyzing"
-                    }, ensure_ascii=False)
+                    
+                    # 保存usage信息（如果有）
+                    if usage:
+                        final_usage = usage
+                        logger.info(f"综合决策官收到usage信息: {usage}")
+                    
+                    # 实时发送流式片段
+                    if chunk:  # 只发送有内容的chunk
+                        yield json.dumps({
+                            "stock_code": code,
+                            "ai_analysis_chunk": chunk,
+                            "status": "analyzing"
+                        }, ensure_ascii=False)
                 
-                logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符")
+                # 累积综合决策的token使用
+                if final_usage:
+                    total_usage["prompt_tokens"] += final_usage.get("prompt_tokens", 0)
+                    total_usage["completion_tokens"] += final_usage.get("completion_tokens", 0)
+                    total_usage["total_tokens"] += final_usage.get("total_tokens", 0)
+                    logger.info(f"累积后总token使用: {total_usage}")
+                
+                logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符，token使用: {final_usage}")
             except Exception as e:
                 logger.exception(f"综合决策官执行失败: {e}")
                 # 综合决策官失败时，发送错误消息并终止
@@ -367,11 +423,44 @@ class AgentOrchestrator:
                 custom_api_timeout=self._api_timeout,
             )._extract_recommendation(final_text)
 
-            # 发送完成状态
-            yield json.dumps({
+            # 发送完成状态（包含token使用信息）
+            completion_data = {
                 "stock_code": code,
                 "status": "completed",
                 "recommendation": rec_text
-            }, ensure_ascii=False)
+            }
+            
+            # 添加token使用信息到响应中
+            logger.info(f"检查token使用统计: total_tokens={total_usage['total_tokens']}")
+            
+            if total_usage["total_tokens"] > 0:
+                # 有精确的token统计
+                completion_data["token_usage"] = total_usage
+                logger.info(f"股票 {code} 分析完成，总token使用（精确）: {total_usage}")
+            else:
+                # API不返回usage，使用字符数估算（粗略：1 token ≈ 4 字符）
+                # 计算所有角色的输入字符数（prompt）
+                prompt_chars = 0
+                for _, tmpl in role_templates:
+                    prompt_chars += len(tmpl) + len(str(technical_summary)) + len(str(recent_data))
+                
+                # 计算综合决策的输入字符数
+                prompt_chars += len(synth_prompt)
+                
+                # 计算输出字符数
+                output_chars = len(collected_text) + len(final_text)
+                
+                # 估算token（1 token ≈ 4 字符，中文可能是 1 token ≈ 1.5-2 字符）
+                estimated_tokens = (prompt_chars + output_chars) // 3  # 使用3作为中文友好的估算
+                
+                completion_data["token_usage"] = {
+                    "estimated": True,
+                    "total_tokens": estimated_tokens,
+                    "prompt_chars": prompt_chars,
+                    "output_chars": output_chars
+                }
+                logger.info(f"股票 {code} 分析完成，估算token使用: ~{estimated_tokens} (输入{prompt_chars}字符 + 输出{output_chars}字符)")
+            
+            yield json.dumps(completion_data, ensure_ascii=False)
 
 

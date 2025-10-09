@@ -110,6 +110,15 @@ export interface UserSettingsRequest {
   ui_preferences?: Record<string, any>;
 }
 
+export interface TokenUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens: number;
+  estimated?: boolean;
+  input_chars?: number;
+  output_chars?: number;
+}
+
 export interface StockInfo {
   code: string;
   name: string;
@@ -129,6 +138,7 @@ export interface StockInfo {
   volume_status?: string;
   analysis_date?: string;
   chart_data?: (string | number)[][];
+  token_usage?: TokenUsage;
 }
 
 export interface SearchResult {
@@ -220,4 +230,5 @@ export interface StreamAnalysisUpdate {
   analysis_date?: string;
   ai_analysis_chunk?: string;
   chart_data?: (string | number)[][];
+  token_usage?: TokenUsage;
 }
