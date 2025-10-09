@@ -36,6 +36,7 @@
                 v-model:value="apiConfig.apiUrl" 
                 placeholder="https://api.openai.com/v1/chat/completions"
                 @update:value="handleConfigChange"
+                autocomplete="off"
                 round
               >
                 <template #prefix>
@@ -62,6 +63,9 @@
                 placeholder="sk-..."
                 show-password-on="click"
                 @update:value="handleConfigChange"
+                autocomplete="off"
+                readonly
+                @focus="handleApikeyFocus"
                 round
               >
                 <template #prefix>
@@ -445,6 +449,14 @@ function saveConfig() {
     saveApiConfig: true
   });
   message.success('已将配置保存到本地');
+}
+
+// 处理API Key输入框焦点 - 移除readonly以允许输入
+function handleApikeyFocus(event: FocusEvent) {
+  const inputElement = event.target as HTMLInputElement;
+  if (inputElement) {
+    inputElement.removeAttribute('readonly');
+  }
 }
 
 onMounted(() => {
