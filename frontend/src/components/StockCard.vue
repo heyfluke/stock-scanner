@@ -213,14 +213,59 @@
       </template>
       
       <template v-else-if="stock.analysisStatus === 'analyzing'">
-        <div class="analysis-result analysis-streaming" 
-             ref="analysisResultRef"
-             v-html="parsedAnalysis">
+        <div class="analysis-result analysis-streaming" ref="analysisResultRef">
+          <template v-for="block in parsedAnalysisBlocks" :key="block.key">
+            <!-- 已完成的角色：可折叠 -->
+            <details 
+              v-if="block.type === 'role-completed'"
+              class="analysis-fold"
+              :open="block.isOpen"
+              @toggle="toggleRoleOpen(block.roleName!)"
+            >
+              <summary>角色 - {{ block.roleName }}</summary>
+              <div v-html="getHighlightedContent(block)"></div>
+            </details>
+            
+            <!-- 正在分析的角色：5行滚动预览 -->
+            <div 
+              v-else-if="block.type === 'role-analyzing'"
+              class="analysis-preview-box"
+              :data-role="block.roleName"
+            >
+              <div class="preview-box-header">角色 - {{ block.roleName }}</div>
+              <div class="preview-box-content" v-html="getHighlightedContent(block)"></div>
+            </div>
+            
+            <!-- 综合决策 -->
+            <div v-else-if="block.type === 'final'" v-html="getHighlightedContent(block)"></div>
+            
+            <!-- 其他内容 -->
+            <div v-else v-html="getHighlightedContent(block)"></div>
+          </template>
         </div>
       </template>
       
       <template v-else-if="stock.analysisStatus === 'completed'">
-        <div class="analysis-result analysis-completed" v-html="parsedAnalysis"></div>
+        <div class="analysis-result analysis-completed">
+          <template v-for="block in parsedAnalysisBlocks" :key="block.key">
+            <!-- 已完成的角色：可折叠 -->
+            <details 
+              v-if="block.type === 'role-completed'"
+              class="analysis-fold"
+              :open="block.isOpen"
+              @toggle="toggleRoleOpen(block.roleName!)"
+            >
+              <summary>角色 - {{ block.roleName }}</summary>
+              <div v-html="getHighlightedContent(block)"></div>
+            </details>
+            
+            <!-- 综合决策 -->
+            <div v-else-if="block.type === 'final'" v-html="getHighlightedContent(block)"></div>
+            
+            <!-- 其他内容 -->
+            <div v-else v-html="getHighlightedContent(block)"></div>
+          </template>
+        </div>
       </template>
     </div>
 
@@ -662,6 +707,18 @@ onBeforeUnmount(() => {
 const lastAnalysisLength = ref(0);
 const lastAnalysisText = ref('');
 
+// 定义分析块类型
+interface AnalysisBlock {
+  type: 'role-completed' | 'role-analyzing' | 'final' | 'other';
+  roleName?: string;
+  content: string;
+  key: string;
+  isOpen?: boolean; // 用于 details 的状态
+}
+
+// 维护每个role的折叠状态（使用Map，key是roleName）
+const roleOpenStates = ref<Map<string, boolean>>(new Map());
+
 // 监听分析内容变化并自动滚动
 watch(() => props.stock.analysis, (newVal, oldVal) => {
   if (newVal && props.stock.analysisStatus === 'analyzing') {
@@ -682,78 +739,155 @@ watch(() => props.stock.analysis, (newVal, oldVal) => {
   }
 }, { immediate: true });
 
-// 分析内容的解析 - 支持每个角色独立显示
-const parsedAnalysis = computed(() => {
-  if (props.stock.analysis) {
-    let content = props.stock.analysis;
-    
-    let result = '';
-    let lastIndex = 0;
-    
-    // 正则：匹配完整的 <analysis>...</analysis> 块
-    const completeAnalysisRegex = /<analysis>(.*?)<\/analysis>/gs;
-    
-    // 先处理所有完整的 analysis 块（已完成的角色）
-    const matches = [...content.matchAll(completeAnalysisRegex)];
-    
-    for (const match of matches) {
-      // 添加匹配前的内容
-      result += content.substring(lastIndex, match.index);
-      
-      const analysisContent = match[1];
-      // 提取角色名
-      const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
-      const roleName = roleMatch ? roleMatch[1].trim() : '分析过程';
-      
-      // 已完成的角色：渲染为折叠组件
-      result += `<details class="analysis-fold"><summary>角色 - ${roleName}</summary>${parseMarkdown(analysisContent)}</details>`;
-      
-      lastIndex = match.index! + match[0].length;
+// 分析内容的解析 - 返回结构化数据
+const parsedAnalysisBlocks = computed<AnalysisBlock[]>(() => {
+  if (!props.stock.analysis) return [];
+  
+  const content = props.stock.analysis;
+  const blocks: AnalysisBlock[] = [];
+  let lastIndex = 0;
+  
+  // 正则：匹配完整的 <analysis>...</analysis> 块
+  const completeAnalysisRegex = /<analysis>(.*?)<\/analysis>/gs;
+  
+  // 处理所有完整的 analysis 块（已完成的角色）
+  const matches = [...content.matchAll(completeAnalysisRegex)];
+  
+  for (const match of matches) {
+    // 添加匹配前的内容
+    const beforeContent = content.substring(lastIndex, match.index);
+    if (beforeContent.trim()) {
+      blocks.push({
+        type: 'other',
+        content: parseMarkdown(beforeContent),
+        key: `other-${blocks.length}`
+      });
     }
     
-    // 处理剩余内容（可能包含未完成的analysis块）
-    const remaining = content.substring(lastIndex);
+    const analysisContent = match[1];
+    // 提取角色名
+    const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
+    const roleName = roleMatch ? roleMatch[1].trim() : '分析过程';
     
-    // 检查剩余内容中是否有未闭合的 <analysis> 标签
-    const lastAnalysisIndex = remaining.lastIndexOf('<analysis>');
-    const lastAnalysisCloseIndex = remaining.lastIndexOf('</analysis>');
-    
-    // 如果最后一个<analysis>在最后一个</analysis>之后，说明有未闭合的块
-    if (lastAnalysisIndex !== -1 && lastAnalysisIndex > lastAnalysisCloseIndex) {
-      // 添加 <analysis> 标签前的所有内容
-      result += remaining.substring(0, lastAnalysisIndex);
-      
-      // 提取未闭合的analysis内容（从<analysis>之后到结尾）
-      const analysisContent = remaining.substring(lastAnalysisIndex + '<analysis>'.length);
-      
-      // 提取角色名
-      const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
-      const roleName = roleMatch ? roleMatch[1].trim() : '分析中...';
-      
-      // 正在分析的角色：渲染为5行滚动预览
-      result += `<div class="analysis-preview-box" data-role="${roleName}">
-        <div class="preview-box-header">角色 - ${roleName}</div>
-        <div class="preview-box-content">${analysisContent}</div>
-      </div>`;
-    } else {
-      // 没有未闭合的analysis，添加所有剩余内容
-      result += remaining;
+    // 检查该role是否已有保存的状态，如果没有则默认折叠
+    if (!roleOpenStates.value.has(roleName)) {
+      roleOpenStates.value.set(roleName, false);
     }
     
-    // 处理 final 块
-    result = result.replace(/<final>(.*?)<\/final>/gs, (_m, finalContent) => {
-      return parseMarkdown(finalContent);
+    // 已完成的角色
+    blocks.push({
+      type: 'role-completed',
+      roleName,
+      content: parseMarkdown(analysisContent),
+      key: `role-${roleName}`,
+      isOpen: roleOpenStates.value.get(roleName)
     });
     
-    // 如果没有任何特殊标签，直接解析markdown
-    if (!content.includes('<analysis>') && !content.includes('<final>')) {
-      result = parseMarkdown(content);
+    lastIndex = match.index! + match[0].length;
+  }
+  
+  // 处理剩余内容（可能包含未完成的analysis块）
+  const remaining = content.substring(lastIndex);
+  
+  // 检查剩余内容中是否有未闭合的 <analysis> 标签
+  const lastAnalysisIndex = remaining.lastIndexOf('<analysis>');
+  const lastAnalysisCloseIndex = remaining.lastIndexOf('</analysis>');
+  
+  // 如果最后一个<analysis>在最后一个</analysis>之后，说明有未闭合的块
+  if (lastAnalysisIndex !== -1 && lastAnalysisIndex > lastAnalysisCloseIndex) {
+    // 添加 <analysis> 标签前的所有内容
+    const beforeAnalysis = remaining.substring(0, lastAnalysisIndex);
+    if (beforeAnalysis.trim()) {
+      blocks.push({
+        type: 'other',
+        content: parseMarkdown(beforeAnalysis),
+        key: `other-${blocks.length}`
+      });
     }
     
-    return highlightKeywords(result);
+    // 提取未闭合的analysis内容
+    const analysisContent = remaining.substring(lastAnalysisIndex + '<analysis>'.length);
+    
+    // 提取角色名
+    const roleMatch = analysisContent.match(/^[\s\n]*###\s*([^\n]+)/);
+    const roleName = roleMatch ? roleMatch[1].trim() : '分析中...';
+    
+    // 正在分析的角色 - 也解析 Markdown
+    blocks.push({
+      type: 'role-analyzing',
+      roleName,
+      content: parseMarkdown(analysisContent),
+      key: `analyzing-${roleName}`
+    });
+  } else {
+    // 没有未闭合的analysis，处理剩余内容
+    // 检查是否有 final 块
+    const finalRegex = /<final>(.*?)<\/final>/gs;
+    const finalMatch = remaining.match(finalRegex);
+    
+    if (finalMatch) {
+      let remainingContent = remaining;
+      const finalMatches = [...remaining.matchAll(finalRegex)];
+      let finalLastIndex = 0;
+      
+      for (const fMatch of finalMatches) {
+        const beforeFinal = remainingContent.substring(finalLastIndex, fMatch.index);
+        if (beforeFinal.trim()) {
+          blocks.push({
+            type: 'other',
+            content: parseMarkdown(beforeFinal),
+            key: `other-${blocks.length}`
+          });
+        }
+        
+        blocks.push({
+          type: 'final',
+          content: parseMarkdown(fMatch[1]),
+          key: `final-${blocks.length}`
+        });
+        
+        finalLastIndex = fMatch.index! + fMatch[0].length;
+      }
+      
+      const afterFinal = remainingContent.substring(finalLastIndex);
+      if (afterFinal.trim()) {
+        blocks.push({
+          type: 'other',
+          content: parseMarkdown(afterFinal),
+          key: `other-${blocks.length}`
+        });
+      }
+    } else if (remaining.trim()) {
+      blocks.push({
+        type: 'other',
+        content: parseMarkdown(remaining),
+        key: `other-${blocks.length}`
+      });
+    }
   }
-  return '';
+  
+  // 如果没有任何块，且内容不包含特殊标签，作为普通内容处理
+  if (blocks.length === 0 && content.trim()) {
+    blocks.push({
+      type: 'other',
+      content: parseMarkdown(content),
+      key: 'content-main'
+    });
+  }
+  
+  return blocks;
 });
+
+// 处理role折叠状态切换
+const toggleRoleOpen = (roleName: string) => {
+  const currentState = roleOpenStates.value.get(roleName) || false;
+  roleOpenStates.value.set(roleName, !currentState);
+};
+
+// 对每个block的内容应用高亮
+const getHighlightedContent = (block: AnalysisBlock): string => {
+  return highlightKeywords(block.content);
+};
 
 // 关键词高亮处理函数
 function highlightKeywords(html: string): string {
@@ -1172,18 +1306,28 @@ const handleExportImage = async () => {
       }
     }
     
-    // 处理折叠的分析内容 - 临时展开所有 <details> 元素
+    // 处理折叠的分析内容 - 手动隐藏折叠状态下的内容
+    // html2canvas 不尊重 <details> 的 open 属性，需要手动控制
     const detailsElements = cardElement.querySelectorAll('details.analysis-fold') as NodeListOf<HTMLDetailsElement>;
-    const originalDetailsStates: boolean[] = [];
+    const hiddenContentElements: Array<{element: HTMLElement, originalDisplay: string}> = [];
     
-    detailsElements.forEach((details, index) => {
-      // 保存原始状态
-      originalDetailsStates[index] = details.open;
-      // 临时展开
-      details.open = true;
+    detailsElements.forEach((details) => {
+      if (!details.open) {
+        // 如果 details 是折叠状态，隐藏其内容（除了 summary）
+        const children = Array.from(details.children) as HTMLElement[];
+        children.forEach((child) => {
+          if (child.tagName.toLowerCase() !== 'summary') {
+            hiddenContentElements.push({
+              element: child,
+              originalDisplay: child.style.display
+            });
+            child.style.display = 'none';
+          }
+        });
+      }
     });
     
-    // 生成canvas
+    // 生成canvas - 保持当前折叠/展开状态
     const canvas = await html2canvas(cardElement, {
       useCORS: true,
       scale: 2, // 提高清晰度
@@ -1202,9 +1346,9 @@ const handleExportImage = async () => {
       });
     }
     
-    // 恢复 <details> 元素的原始状态
-    detailsElements.forEach((details, index) => {
-      details.open = originalDetailsStates[index];
+    // 恢复被隐藏的折叠内容
+    hiddenContentElements.forEach(({ element, originalDisplay }) => {
+      element.style.display = originalDisplay;
     });
     
     // 转换为图片并下载
@@ -1618,7 +1762,69 @@ defineExpose({
   contain: content;
 }
 
-/* 分析预览框样式（正在分析的角色） */
+/* 分析预览框样式（正在分析的角色） - 直接应用于模板中的元素 */
+.analysis-result .analysis-preview-box {
+  margin: 1rem 0;
+  padding: 0;
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(32, 128, 240, 0.15);
+  overflow: hidden;
+  animation: fadePulse 2s infinite;
+}
+
+.analysis-result .analysis-preview-box .preview-box-header {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #2080f0;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(32, 128, 240, 0.08);
+  border-bottom: 1px solid rgba(32, 128, 240, 0.15);
+  display: flex;
+  align-items: center;
+}
+
+.analysis-result .analysis-preview-box .preview-box-header::after {
+  content: '|';
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: var(--n-info-color);
+  animation: blink 1s step-end infinite;
+  font-weight: bold;
+}
+
+.analysis-result .analysis-preview-box .preview-box-content {
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--n-text-color-2);
+  word-break: break-word;
+  /* 限制最大显示5行 */
+  max-height: calc(1.6em * 5);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 预览框滚动条样式 */
+.analysis-result .analysis-preview-box .preview-box-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.analysis-result .analysis-preview-box .preview-box-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.analysis-result .analysis-preview-box .preview-box-content::-webkit-scrollbar-thumb {
+  background: rgba(32, 128, 240, 0.3);
+  border-radius: 3px;
+}
+
+.analysis-result .analysis-preview-box .preview-box-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(32, 128, 240, 0.5);
+}
+
+/* 同时保留 :deep() 版本以兼容 v-html 渲染的内容 */
 .analysis-result :deep(.analysis-preview-box) {
   margin: 1rem 0;
   padding: 0;
@@ -1651,11 +1857,9 @@ defineExpose({
 
 .analysis-result :deep(.analysis-preview-box .preview-box-content) {
   padding: 0.75rem;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   line-height: 1.6;
   color: var(--n-text-color-2);
-  white-space: pre-wrap;
   word-break: break-word;
   /* 限制最大显示5行 */
   max-height: calc(1.6em * 5);
@@ -2122,6 +2326,22 @@ defineExpose({
   }
   
   /* 移动端预览框样式 */
+  .analysis-result .analysis-preview-box {
+    margin: 0.75rem 0;
+  }
+  
+  .analysis-result .analysis-preview-box .preview-box-header {
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+  }
+  
+  .analysis-result .analysis-preview-box .preview-box-content {
+    font-size: 0.85rem;
+    padding: 0.6rem;
+    /* 移动端限制4行 */
+    max-height: calc(1.6em * 4);
+  }
+  
   .analysis-result :deep(.analysis-preview-box) {
     margin: 0.75rem 0;
   }
@@ -2132,7 +2352,7 @@ defineExpose({
   }
   
   .analysis-result :deep(.analysis-preview-box .preview-box-content) {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     padding: 0.6rem;
     /* 移动端限制4行 */
     max-height: calc(1.6em * 4);
@@ -2542,7 +2762,63 @@ defineExpose({
   display: none;
 }
 
-/* 折叠组件样式（分析完成后使用） */
+/* 折叠组件样式（分析完成后使用） - 直接应用于模板中的元素 */
+.analysis-result .analysis-fold {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: rgba(32, 128, 240, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(32, 128, 240, 0.15);
+  transition: all 0.3s ease;
+}
+
+.analysis-result .analysis-fold:hover {
+  background-color: rgba(32, 128, 240, 0.08);
+  border-color: rgba(32, 128, 240, 0.25);
+}
+
+.analysis-result .analysis-fold > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #2080f0;
+  padding: 0.5rem;
+  margin: -0.75rem -0.75rem 0.5rem -0.75rem;
+  background-color: rgba(32, 128, 240, 0.08);
+  border-radius: 6px 6px 0 0;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.analysis-result .analysis-fold > summary:hover {
+  background-color: rgba(32, 128, 240, 0.12);
+}
+
+.analysis-result .analysis-fold > summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 0.5rem;
+  transition: transform 0.2s ease;
+  font-size: 0.8rem;
+}
+
+.analysis-result .analysis-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.analysis-result .analysis-fold[open] > summary {
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+}
+
+/* 折叠内容区域 */
+.analysis-result .analysis-fold > div {
+  padding-left: 0.5rem;
+}
+
+/* 同时保留 :deep() 版本以兼容 v-html 渲染的内容 */
 .analysis-result :deep(details.analysis-fold) {
   margin: 1rem 0;
   padding: 0.75rem;
@@ -2600,6 +2876,17 @@ defineExpose({
 
 /* 移动端优化折叠组件 */
 @media (max-width: 768px) {
+  .analysis-result .analysis-fold {
+    margin: 0.75rem 0;
+    padding: 0.6rem;
+  }
+  
+  .analysis-result .analysis-fold > summary {
+    font-size: 0.9rem;
+    padding: 0.4rem;
+    margin: -0.6rem -0.6rem 0.4rem -0.6rem;
+  }
+  
   .analysis-result :deep(details.analysis-fold) {
     margin: 0.75rem 0;
     padding: 0.6rem;
