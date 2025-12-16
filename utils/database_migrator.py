@@ -394,6 +394,12 @@ class DatabaseMigrator:
                 "name": "add_analysis_id_to_history",
                 "description": "为analysis_history表添加analysis_id字段用于历史跳转",
                 "migrate": self._migrate_to_v10
+            },
+            {
+                "version": 11,
+                "name": "add_api_multi_config_support",
+                "description": "添加多API配置支持：api_configurations表、api_usage_records表，为user_settings添加selected_api_config字段",
+                "migrate": self._migrate_to_v11
             }
         ]
     
@@ -924,6 +930,147 @@ class DatabaseMigrator:
                 logger.info("v10迁移完成：analysis_history表处理成功")
         except Exception as e:
             logger.error(f"v10迁移失败: {e}")
+            raise
+    
+    def _migrate_to_v11(self):
+        """迁移到版本11：添加多API配置支持"""
+        try:
+            logger.info("开始v11迁移：添加多API配置支持")
+            
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL 语法
+                    
+                    # 1. 为user_settings表添加selected_api_config字段
+                    logger.info("检查user_settings表是否需要添加selected_api_config字段")
+                    result = session.execute(text("""
+                        SELECT COUNT(*) as count
+                        FROM information_schema.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = 'user_settings'
+                        AND COLUMN_NAME = 'selected_api_config'
+                    """))
+                    column_exists = result.scalar() > 0
+                    
+                    if not column_exists:
+                        session.execute(text("""
+                            ALTER TABLE user_settings 
+                            ADD COLUMN selected_api_config VARCHAR(100) NULL
+                        """))
+                        logger.info("添加selected_api_config字段到user_settings表")
+                    
+                    # 2. 创建api_configurations表
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS api_configurations (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            config_name VARCHAR(100) NOT NULL UNIQUE,
+                            api_url VARCHAR(500) NOT NULL,
+                            api_key VARCHAR(500) NOT NULL,
+                            api_model VARCHAR(100) NOT NULL,
+                            description VARCHAR(500),
+                            is_active TINYINT DEFAULT 1,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            INDEX idx_config_name (config_name)
+                        )
+                    """))
+                    logger.info("创建api_configurations表")
+                    
+                    # 3. 创建api_usage_records表
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS api_usage_records (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            user_id INT NOT NULL,
+                            config_name VARCHAR(100) NOT NULL,
+                            year_month VARCHAR(7) NOT NULL,
+                            prompt_tokens INT DEFAULT 0,
+                            completion_tokens INT DEFAULT 0,
+                            total_tokens INT DEFAULT 0,
+                            request_count INT DEFAULT 0,
+                            is_estimated TINYINT DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            INDEX idx_user_config_month (user_id, config_name, year_month),
+                            INDEX idx_year_month (year_month),
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        )
+                    """))
+                    logger.info("创建api_usage_records表")
+                    
+                else:
+                    # SQLite 语法
+                    
+                    # 1. 为user_settings表添加selected_api_config字段
+                    logger.info("检查user_settings表是否需要添加selected_api_config字段")
+                    result = session.execute(text("""
+                        SELECT COUNT(*) as count
+                        FROM pragma_table_info('user_settings')
+                        WHERE name = 'selected_api_config'
+                    """))
+                    column_exists = result.scalar() > 0
+                    
+                    if not column_exists:
+                        session.execute(text("""
+                            ALTER TABLE user_settings 
+                            ADD COLUMN selected_api_config TEXT
+                        """))
+                        logger.info("添加selected_api_config字段到user_settings表")
+                    
+                    # 2. 创建api_configurations表
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS api_configurations (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            config_name TEXT NOT NULL UNIQUE,
+                            api_url TEXT NOT NULL,
+                            api_key TEXT NOT NULL,
+                            api_model TEXT NOT NULL,
+                            description TEXT,
+                            is_active INTEGER DEFAULT 1,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_config_name 
+                        ON api_configurations (config_name)
+                    """))
+                    logger.info("创建api_configurations表")
+                    
+                    # 3. 创建api_usage_records表
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS api_usage_records (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            config_name TEXT NOT NULL,
+                            year_month TEXT NOT NULL,
+                            prompt_tokens INTEGER DEFAULT 0,
+                            completion_tokens INTEGER DEFAULT 0,
+                            total_tokens INTEGER DEFAULT 0,
+                            request_count INTEGER DEFAULT 0,
+                            is_estimated INTEGER DEFAULT 0,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_user_config_month 
+                        ON api_usage_records (user_id, config_name, year_month)
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_year_month 
+                        ON api_usage_records (year_month)
+                    """))
+                    logger.info("创建api_usage_records表")
+                
+                session.commit()
+            
+            logger.info("v11迁移完成：多API配置支持功能添加成功")
+            
+        except Exception as e:
+            logger.error(f"v11迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:

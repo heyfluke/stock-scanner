@@ -609,11 +609,16 @@ const loadApiConfigs = async () => {
   try {
     const response = await apiService.getApiConfigs();
     apiConfigs.value = response.configs || [];
+    console.log('API配置列表已加载:', apiConfigs.value);
     
     // 加载用户当前选择的配置
     const settings = await apiService.getUserSettings();
-    if (settings.settings && settings.settings.selected_api_config) {
-      selectedApiConfig.value = settings.settings.selected_api_config;
+    console.log('用户设置已加载:', settings);
+    if (settings && settings.selected_api_config) {
+      selectedApiConfig.value = settings.selected_api_config;
+      console.log('已恢复API配置选择:', selectedApiConfig.value);
+    } else {
+      console.log('未找到已保存的API配置选择');
     }
   } catch (error) {
     console.error('加载API配置失败:', error);
@@ -648,9 +653,11 @@ const saveApiConfigSelection = async () => {
   
   try {
     savingApiConfig.value = true;
-    await apiService.updateUserSettings({
+    console.log('正在保存API配置:', selectedApiConfig.value);
+    const result = await apiService.updateUserSettings({
       selected_api_config: selectedApiConfig.value
     });
+    console.log('保存结果:', result);
     message.success('API配置保存成功');
   } catch (error: any) {
     console.error('保存API配置失败:', error);
