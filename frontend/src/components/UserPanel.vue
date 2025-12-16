@@ -207,6 +207,100 @@
               </n-list>
             </div>
           </n-tab-pane>
+
+          <n-tab-pane name="api-config" tab="API配置">
+            <div class="api-config-section">
+              <!-- API配置选择 -->
+              <n-card title="API配置" size="small" style="margin-bottom: 16px;">
+                <n-empty v-if="apiConfigs.length === 0" description="暂无可用的API配置">
+                  <template #extra>
+                    <n-text depth="3">请联系管理员添加API配置</n-text>
+                  </template>
+                </n-empty>
+                
+                <n-space v-else vertical>
+                  <n-radio-group v-model:value="selectedApiConfig" @update:value="handleApiConfigChange">
+                    <n-space vertical>
+                      <n-radio
+                        v-for="config in apiConfigs"
+                        :key="config.config_name"
+                        :value="config.config_name"
+                      >
+                          <n-space vertical :size="4">
+                            <n-space align="center">
+                              <n-text strong>{{ config.config_name }}</n-text>
+                              <n-tag v-if="config.source === 'environment'" size="small" type="success">环境</n-tag>
+                              <n-tag v-else-if="config.source === 'database'" size="small" type="info">数据库</n-tag>
+                              <n-tag v-else size="small">个性</n-tag>
+                            </n-space>
+                            <n-text v-if="config.description" depth="3" style="font-size: 12px;">
+                              {{ config.description }}
+                            </n-text>
+                          </n-space>
+                      </n-radio>
+                    </n-space>
+                  </n-radio-group>
+                  
+                  <n-divider />
+                  
+                  <n-button
+                    type="primary"
+                    size="small"
+                    @click="saveApiConfigSelection"
+                    :loading="savingApiConfig"
+                    :disabled="!selectedApiConfig"
+                  >
+                    保存选择
+                  </n-button>
+                </n-space>
+              </n-card>
+              
+              <!-- API用量统计 -->
+              <n-card title="本月用量统计" size="small">
+                <n-spin :show="loadingUsage">
+                  <template v-if="usageSummary && usageSummary.total_tokens > 0">
+                    <n-space vertical>
+                      <n-statistic label="总Token消耗" :value="usageSummary.total_tokens">
+                        <template #suffix>tokens</template>
+                      </n-statistic>
+                      
+                      <n-statistic label="总请求次数" :value="usageSummary.total_requests">
+                        <template #suffix>次</template>
+                      </n-statistic>
+                      
+                      <n-divider />
+                      
+                      <n-text strong>按配置统计:</n-text>
+                      
+                      <n-list>
+                        <n-list-item v-for="(usage, configName) in usageSummary.by_config" :key="configName">
+                          <n-thing :title="configName">
+                            <n-space>
+                              <n-text depth="3">
+                                输入: {{ usage.prompt_tokens }} tokens
+                              </n-text>
+                              <n-text depth="3">
+                                输出: {{ usage.completion_tokens }} tokens
+                              </n-text>
+                              <n-text depth="3">
+                                总计: {{ usage.total_tokens }} tokens
+                              </n-text>
+                              <n-text depth="3">
+                                请求: {{ usage.request_count }} 次
+                              </n-text>
+                              <n-tag v-if="usage.is_estimated" size="tiny" type="warning">估算</n-tag>
+                            </n-space>
+                          </n-thing>
+                        </n-list-item>
+                      </n-list>
+                    </n-space>
+                  </template>
+                  
+                  <n-empty v-else description="本月暂无用量数据" />
+                </n-spin>
+              </n-card>
+            </div>
+          </n-tab-pane>
         </n-tabs>
       </n-card>
     </div>
@@ -228,7 +322,8 @@ import { ref, reactive, onMounted, computed } from 'vue';
 import {
   NCard, NTabs, NTabPane, NForm, NFormItem, NInput, NButton,
   NDescriptions, NDescriptionsItem, NList, NListItem, NThing,
-  NTag, NSpace, NText, NEmpty, NIcon, NSpin, NModal, useMessage
+  NTag, NSpace, NText, NEmpty, NIcon, NSpin, NModal, useMessage,
+  NRadioGroup, NRadio, NDivider, NStatistic
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { 
@@ -281,6 +376,13 @@ const conversations = ref<Conversation[]>([]);
 const showConversation = ref(false);
 const currentConversation = ref<Conversation | null>(null);
 const deletingConversationId = ref<number | null>(null);
+
+// API配置状态
+const apiConfigs = ref<any[]>([]);
+const selectedApiConfig = ref<string | null>(null);
+const savingApiConfig = ref(false);
+const usageSummary = ref<any>(null);
+const loadingUsage = ref(false);
 
 // Tab状态
 const activeTab = ref(props.defaultTab || 'login');
@@ -455,11 +557,13 @@ const loadUserData = async () => {
       userProfile.value = profile;
       isLoggedIn.value = true;
       
-      // 加载收藏、历史记录和对话
+      // 加载收藏、历史记录、对话、API配置和用量
       await Promise.all([
         loadFavorites(),
         loadAnalysisHistory(),
-        loadConversations()
+        loadConversations(),
+        loadApiConfigs(),
+        loadApiUsage()
       ]);
     } else {
       isLoggedIn.value = false;
@@ -497,6 +601,62 @@ const loadConversations = async () => {
     conversations.value = await apiService.getConversations();
   } catch (error) {
     console.error('加载对话列表失败:', error);
+  }
+};
+
+// 加载API配置列表
+const loadApiConfigs = async () => {
+  try {
+    const response = await apiService.getApiConfigs();
+    apiConfigs.value = response.configs || [];
+    
+    // 加载用户当前选择的配置
+    const settings = await apiService.getUserSettings();
+    if (settings.settings && settings.settings.selected_api_config) {
+      selectedApiConfig.value = settings.settings.selected_api_config;
+    }
+  } catch (error) {
+    console.error('加载API配置失败:', error);
+  }
+};
+
+// 加载API用量
+const loadApiUsage = async () => {
+  try {
+    loadingUsage.value = true;
+    const response = await apiService.getApiUsage();
+    usageSummary.value = response.summary || null;
+  } catch (error) {
+    console.error('加载API用量失败:', error);
+  } finally {
+    loadingUsage.value = false;
+  }
+};
+
+// 处理API配置变更
+const handleApiConfigChange = (value: string) => {
+  // 配置变更时，暂不自动保存，等用户点击"保存选择"按钮
+  console.log('选择API配置:', value);
+};
+
+// 保存API配置选择
+const saveApiConfigSelection = async () => {
+  if (!selectedApiConfig.value) {
+    message.warning('请先选择一个API配置');
+    return;
+  }
+  
+  try {
+    savingApiConfig.value = true;
+    await apiService.updateUserSettings({
+      selected_api_config: selectedApiConfig.value
+    });
+    message.success('API配置保存成功');
+  } catch (error: any) {
+    console.error('保存API配置失败:', error);
+    message.error(error.message || '保存失败');
+  } finally {
+    savingApiConfig.value = false;
   }
 };
 

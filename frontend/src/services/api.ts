@@ -389,5 +389,31 @@ export const apiService = {
       // 默认为需要登录，确保安全
       return true;
     }
+  },
+
+  // 获取API配置列表
+  getApiConfigs: async (): Promise<any> => {
+    try {
+      const response = await axiosInstance.get('/user/api-configs');
+      return response.data;
+    } catch (error) {
+      console.error('获取API配置列表时出错:', error);
+      return { configs: [] };
+    }
+  },
+
+  // 获取API用量统计
+  getApiUsage: async (configName?: string, yearMonth?: string): Promise<any> => {
+    try {
+      const params: any = {};
+      if (configName) params.config_name = configName;
+      if (yearMonth) params.year_month = yearMonth;
+      
+      const response = await axiosInstance.get('/user/api-usage', { params });
+      return response.data;
+    } catch (error) {
+      console.error('获取API用量时出错:', error);
+      return { summary: null, records: [] };
+    }
   }
 };

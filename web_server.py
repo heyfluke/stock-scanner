@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any, Generator
 from services.stock_analyzer_service import StockAnalyzerService
 from services.us_stock_service_async import USStockServiceAsync
 from services.fund_service_async import FundServiceAsync
-from services.user_service import user_service, UserRegisterRequest, UserLoginRequest, FavoriteRequest, UserSettingsRequest
+from services.user_service import user_service, UserRegisterRequest, UserLoginRequest, FavoriteRequest, UserSettingsRequest, APIConfigRequest
 import os
 import httpx
 from utils.logger import get_logger
@@ -78,6 +78,7 @@ class AnalyzeRequest(BaseModel):
     api_timeout: Optional[str] = None
     analysis_days: Optional[int] = 30  # AI分析使用的天数，默认30天
     preset_id: Optional[str] = None     # 多Agent预设方案ID（可选）
+    config_name: Optional[str] = None   # API配置名称（新增）
 
 class TestAPIRequest(BaseModel):
     api_url: str
@@ -576,6 +577,79 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     settings = user_service.get_user_settings(current_user["user_id"])
     return {"settings": settings or {}}
 
+# API配置管理接口
+@app.get("/api/user/api-configs")
+async def get_api_configs(current_user: dict = Depends(get_current_user)):
+    """获取所有可用的API配置列表（仅返回配置名称和描述，不暴露敏感信息）"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    configs = []
+    
+    # 1. 环境配置（如果存在）
+    env_api_url = os.getenv('API_URL', '')
+    env_api_key = os.getenv('API_KEY', '')
+    env_api_model = os.getenv('API_MODEL', '')
+    
+    if env_api_url and env_api_key:
+        configs.append({
+            "config_name": "环境配置",
+            "description": "从环境变量配置的API",
+            "source": "environment"
+        })
+    
+    # 2. 数据库中的配置（仅返回必要信息，不暴露URL和密钥）
+    db_configs = user_service.get_api_configurations(active_only=True)
+    for config in db_configs:
+        configs.append({
+            "config_name": config["config_name"],
+            "description": config.get("description", ""),
+            "source": "database"
+        })
+    
+    return {"configs": configs}
+
+@app.get("/api/user/api-usage")
+async def get_api_usage(
+    config_name: Optional[str] = None,
+    year_month: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取API用量统计"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user_id = current_user["user_id"]
+    
+    # 获取月度汇总
+    summary = user_service.get_monthly_usage_summary(user_id, year_month)
+    
+    # 获取详细记录
+    records = user_service.get_api_usage(user_id, config_name, year_month)
+    
+    return {
+        "summary": summary,
+        "records": records
+    }
+
+@app.post("/api/user/api-configs")
+async def add_api_config(
+    config_data: APIConfigRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """添加新的API配置（仅管理员或特殊用户）"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    # TODO: 可以添加权限检查，限制只有管理员可以添加配置
+    
+    success = user_service.add_api_configuration(config_data)
+    
+    if success:
+        return {"success": True, "message": "API配置添加成功"}
+    else:
+        raise HTTPException(status_code=400, detail="API配置添加失败，可能配置名称已存在")
+
 # 获取系统配置
 @app.get("/api/config")
 async def get_config():
@@ -615,14 +689,48 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
         
         logger.debug(f"接收到分析请求: stock_codes={stock_codes}, market_type={market_type}")
         
-        # 获取自定义API配置，处理空字符串
-        custom_api_url = request.api_url if request.api_url and request.api_url.strip() else None
-        custom_api_key = request.api_key if request.api_key and request.api_key.strip() else None
-        custom_api_model = request.api_model if request.api_model and request.api_model.strip() else None
-        custom_api_timeout = request.api_timeout if request.api_timeout and request.api_timeout.strip() else None
-        analysis_days = request.analysis_days or 30  # 默认30天
+        # 获取API配置
+        custom_api_url = None
+        custom_api_key = None
+        custom_api_model = None
+        custom_api_timeout = None
+        effective_config_name = None  # 实际使用的配置名称
         
-        logger.debug(f"自定义API配置: URL={custom_api_url}, 模型={custom_api_model}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
+        # 优先级：config_name > 个性配置 > 环境配置
+        if request.config_name and request.config_name.strip():
+            # 使用指定的配置名称
+            config_name = request.config_name.strip()
+            effective_config_name = config_name
+            
+            if config_name == "环境配置":
+                # 使用环境变量配置
+                custom_api_url = os.getenv('API_URL', '')
+                custom_api_key = os.getenv('API_KEY', '')
+                custom_api_model = os.getenv('API_MODEL', '')
+                custom_api_timeout = os.getenv('API_TIMEOUT', '')
+                logger.debug(f"使用环境配置: URL={custom_api_url}, 模型={custom_api_model}")
+            else:
+                # 从数据库获取配置
+                api_config = user_service.get_api_configuration(config_name)
+                if api_config:
+                    custom_api_url = api_config.api_url
+                    custom_api_key = api_config.api_key
+                    custom_api_model = api_config.api_model
+                    logger.debug(f"使用数据库配置: {config_name}, URL={custom_api_url}, 模型={custom_api_model}")
+                else:
+                    logger.warning(f"未找到配置: {config_name}，使用默认配置")
+                    effective_config_name = "个性配置"
+        else:
+            # 使用个性配置（request中直接提供的API参数）
+            custom_api_url = request.api_url if request.api_url and request.api_url.strip() else None
+            custom_api_key = request.api_key if request.api_key and request.api_key.strip() else None
+            custom_api_model = request.api_model if request.api_model and request.api_model.strip() else None
+            custom_api_timeout = request.api_timeout if request.api_timeout and request.api_timeout.strip() else None
+            effective_config_name = "个性配置"
+            logger.debug(f"使用个性配置: URL={custom_api_url}, 模型={custom_api_model}")
+        
+        analysis_days = request.analysis_days or 30  # 默认30天
+        logger.debug(f"有效配置名称: {effective_config_name}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
         
         # 如果提供了preset_id，则使用Orchestrator；否则保持原有StockAnalyzerService
         use_orchestrator = True if (request.preset_id and request.preset_id.strip()) else False
@@ -663,6 +771,12 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             collected_ai_output = ""
             collected_chart_data = {}
             current_analysis_id = None  # 存储当前分析的UUID
+            total_token_usage = {  # 收集token使用量
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated": False
+            }
             
             if len(stock_codes) == 1:
                 # 单个股票分析流式处理
@@ -696,6 +810,15 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                                 collected_ai_output = chunk_data["analysis"]
                             if "chart_data" in chunk_data:
                                 collected_chart_data[stock_code] = chunk_data["chart_data"]
+                            
+                            # 收集token使用量
+                            if "token_usage" in chunk_data:
+                                usage = chunk_data["token_usage"]
+                                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+                                if usage.get("estimated", False):
+                                    total_token_usage["estimated"] = True
                         except json.JSONDecodeError:
                             pass
                         yield chunk + '\n'
@@ -720,6 +843,15 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                             # 收集图表数据
                             if "chart_data" in chunk_data:
                                 collected_chart_data[stock_code] = chunk_data["chart_data"]
+                            
+                            # 收集token使用量
+                            if "token_usage" in chunk_data:
+                                usage = chunk_data["token_usage"]
+                                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+                                if usage.get("estimated", False):
+                                    total_token_usage["estimated"] = True
                                 
                         except json.JSONDecodeError:
                             pass  # 忽略无法解析的chunk
@@ -766,6 +898,15 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                                     collected_ai_output[stock_code] = chunk_data["analysis"]
                                 if "chart_data" in chunk_data:
                                     collected_chart_data[stock_code] = chunk_data["chart_data"]
+                            
+                            # 收集token使用量
+                            if "token_usage" in chunk_data:
+                                usage = chunk_data["token_usage"]
+                                total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                                total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                                total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+                                if usage.get("estimated", False):
+                                    total_token_usage["estimated"] = True
                         except json.JSONDecodeError:
                             pass
                         logger.debug(f"发送批量数据块 {chunk_count}: {chunk}")
@@ -805,6 +946,15 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                                 # 收集图表数据
                                 if "chart_data" in chunk_data:
                                     collected_chart_data[stock_code] = chunk_data["chart_data"]
+                                
+                                # 收集token使用量
+                                if "token_usage" in chunk_data:
+                                    usage = chunk_data["token_usage"]
+                                    total_token_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                                    total_token_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                                    total_token_usage["total_tokens"] += usage.get("total_tokens", 0)
+                                    if usage.get("estimated", False):
+                                        total_token_usage["estimated"] = True
                                     
                         except json.JSONDecodeError:
                             pass  # 忽略无法解析的chunk
@@ -845,6 +995,20 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                     logger.info(f"历史记录更新成功，ID: {history_id}")
                 except Exception as e:
                     logger.error(f"更新历史记录失败: {str(e)}")
+                    logger.exception(e)
+            
+            # 记录token使用量（如果用户已登录且有token使用）
+            if (ENABLE_USER_SYSTEM and current_user["is_authenticated"] and 
+                current_user["user_id"] and total_token_usage["total_tokens"] > 0):
+                try:
+                    user_service.record_api_usage(
+                        user_id=current_user["user_id"],
+                        config_name=effective_config_name or "未知配置",
+                        usage_data=total_token_usage
+                    )
+                    logger.info(f"Token使用量记录成功: 配置={effective_config_name}, 总tokens={total_token_usage['total_tokens']}")
+                except Exception as e:
+                    logger.error(f"记录token使用量失败: {str(e)}")
                     logger.exception(e)
         
         logger.info("成功创建流式响应生成器")

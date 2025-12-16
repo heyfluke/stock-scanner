@@ -80,8 +80,47 @@ class UserSettings(SQLModel, table=True):
     default_analysis_days: int = Field(default=30)
     api_preferences: Optional[str] = Field(default=None)  # JSON格式
     ui_preferences: Optional[str] = Field(default=None)   # JSON格式
+    selected_api_config: Optional[str] = Field(default=None, max_length=100)  # 当前选择的API配置名称
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class APIConfiguration(SQLModel, table=True):
+    """API配置表 - 存储多个AI API配置"""
+    __tablename__ = "api_configurations"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    config_name: str = Field(unique=True, max_length=100, index=True)  # 配置名称，唯一标识
+    api_url: str = Field(max_length=500)  # API地址
+    api_key: str = Field(max_length=500)  # API密钥（建议加密存储）
+    api_model: str = Field(max_length=100)  # 模型名称
+    description: Optional[str] = Field(default=None, max_length=500)  # 配置描述
+    is_active: bool = Field(default=True)  # 是否激活
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class APIUsageRecord(SQLModel, table=True):
+    """API用量记录表 - 按月统计token使用量"""
+    __tablename__ = "api_usage_records"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    config_name: str = Field(max_length=100, index=True)  # 使用的API配置名称
+    year_month: str = Field(max_length=7, index=True)  # 格式: "2025-01"
+    prompt_tokens: int = Field(default=0)  # 输入token数
+    completion_tokens: int = Field(default=0)  # 输出token数
+    total_tokens: int = Field(default=0)  # 总token数
+    request_count: int = Field(default=0)  # 请求次数
+    is_estimated: bool = Field(default=False)  # 是否为估算值
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+# 导出模型类，供其他模块使用
+__all__ = [
+    'User', 'UserFavorite', 'AnalysisHistory', 'Conversation', 'ConversationMessage',
+    'UserSettings', 'APIConfiguration', 'APIUsageRecord',
+    'UserRegisterRequest', 'UserLoginRequest', 'FavoriteRequest', 'UserSettingsRequest', 
+    'APIConfigRequest', 'UserService', 'user_service'
+]
 
 # 请求响应模型
 class UserRegisterRequest(BaseModel):
@@ -105,6 +144,14 @@ class UserSettingsRequest(BaseModel):
     default_analysis_days: Optional[int] = None
     api_preferences: Optional[Dict[str, Any]] = None
     ui_preferences: Optional[Dict[str, Any]] = None
+    selected_api_config: Optional[str] = None
+
+class APIConfigRequest(BaseModel):
+    config_name: str
+    api_url: str
+    api_key: str
+    api_model: str
+    description: Optional[str] = None
 
 class UserService:
     def __init__(self, database_url: Optional[str] = None):
@@ -656,6 +703,8 @@ class UserService:
                     settings.api_preferences = json.dumps(settings_data.api_preferences)
                 if settings_data.ui_preferences is not None:
                     settings.ui_preferences = json.dumps(settings_data.ui_preferences)
+                if settings_data.selected_api_config is not None:
+                    settings.selected_api_config = settings_data.selected_api_config
                 
                 settings.updated_at = datetime.utcnow()
                 session.commit()
@@ -681,6 +730,7 @@ class UserService:
                         "default_analysis_days": settings.default_analysis_days,
                         "api_preferences": json.loads(settings.api_preferences) if settings.api_preferences else {},
                         "ui_preferences": json.loads(settings.ui_preferences) if settings.ui_preferences else {},
+                        "selected_api_config": settings.selected_api_config,
                         "updated_at": settings.updated_at.isoformat()
                     }
                 return None
@@ -688,6 +738,236 @@ class UserService:
         except Exception as e:
             logger.error(f"获取用户设置失败: {str(e)}")
             return None
+
+    # API配置管理功能
+    def add_api_configuration(self, config_data: APIConfigRequest) -> bool:
+        """添加API配置"""
+        try:
+            with Session(self.engine) as session:
+                # 检查配置名称是否已存在
+                existing = session.exec(
+                    select(APIConfiguration).where(APIConfiguration.config_name == config_data.config_name)
+                ).first()
+                
+                if existing:
+                    logger.warning(f"API配置名称已存在: {config_data.config_name}")
+                    return False
+                
+                config = APIConfiguration(
+                    config_name=config_data.config_name,
+                    api_url=config_data.api_url,
+                    api_key=config_data.api_key,
+                    api_model=config_data.api_model,
+                    description=config_data.description
+                )
+                
+                session.add(config)
+                session.commit()
+                logger.info(f"API配置添加成功: {config_data.config_name}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"添加API配置失败: {str(e)}")
+            return False
+    
+    def get_api_configurations(self, active_only: bool = True, include_sensitive: bool = False) -> List[Dict[str, Any]]:
+        """获取所有API配置
+        
+        Args:
+            active_only: 是否只返回激活的配置
+            include_sensitive: 是否包含敏感信息（URL、密钥等），默认False用于API接口
+        """
+        try:
+            with Session(self.engine) as session:
+                query = select(APIConfiguration)
+                if active_only:
+                    query = query.where(APIConfiguration.is_active == True)
+                
+                configs = session.exec(query.order_by(APIConfiguration.created_at.desc())).all()
+                
+                result = []
+                for config in configs:
+                    config_dict = {
+                        "id": config.id,
+                        "config_name": config.config_name,
+                        "description": config.description,
+                        "is_active": config.is_active,
+                        "created_at": config.created_at.isoformat()
+                    }
+                    
+                    # 只有需要时才包含敏感信息（管理脚本使用）
+                    if include_sensitive:
+                        config_dict.update({
+                            "api_url": config.api_url,
+                            "api_key": config.api_key[:10] + "..." if len(config.api_key) > 10 else config.api_key,  # 部分隐藏
+                            "api_model": config.api_model,
+                        })
+                    
+                    result.append(config_dict)
+                return result
+                
+        except Exception as e:
+            logger.error(f"获取API配置列表失败: {str(e)}")
+            return []
+    
+    def get_api_configuration(self, config_name: str) -> Optional[APIConfiguration]:
+        """获取单个API配置（完整信息，包括完整密钥）"""
+        try:
+            with Session(self.engine) as session:
+                config = session.exec(
+                    select(APIConfiguration).where(
+                        APIConfiguration.config_name == config_name,
+                        APIConfiguration.is_active == True
+                    )
+                ).first()
+                return config
+                
+        except Exception as e:
+            logger.error(f"获取API配置失败: {str(e)}")
+            return None
+    
+    def delete_api_configuration(self, config_name: str) -> bool:
+        """删除API配置"""
+        try:
+            with Session(self.engine) as session:
+                config = session.exec(
+                    select(APIConfiguration).where(APIConfiguration.config_name == config_name)
+                ).first()
+                
+                if config:
+                    session.delete(config)
+                    session.commit()
+                    logger.info(f"API配置删除成功: {config_name}")
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"删除API配置失败: {str(e)}")
+            return False
+    
+    # API用量记录功能
+    def record_api_usage(self, user_id: int, config_name: str, usage_data: Dict[str, Any]) -> bool:
+        """记录API用量"""
+        try:
+            with Session(self.engine) as session:
+                # 获取当前年月
+                now = datetime.utcnow()
+                year_month = now.strftime("%Y-%m")
+                
+                # 查找或创建该月的用量记录
+                record = session.exec(
+                    select(APIUsageRecord).where(
+                        APIUsageRecord.user_id == user_id,
+                        APIUsageRecord.config_name == config_name,
+                        APIUsageRecord.year_month == year_month
+                    )
+                ).first()
+                
+                if not record:
+                    record = APIUsageRecord(
+                        user_id=user_id,
+                        config_name=config_name,
+                        year_month=year_month
+                    )
+                    session.add(record)
+                
+                # 累加用量
+                prompt_tokens = usage_data.get('prompt_tokens', 0)
+                completion_tokens = usage_data.get('completion_tokens', 0)
+                total_tokens = usage_data.get('total_tokens', prompt_tokens + completion_tokens)
+                is_estimated = usage_data.get('estimated', False)
+                
+                record.prompt_tokens += prompt_tokens
+                record.completion_tokens += completion_tokens
+                record.total_tokens += total_tokens
+                record.request_count += 1
+                record.is_estimated = record.is_estimated or is_estimated  # 只要有一次估算就标记为估算
+                record.updated_at = datetime.utcnow()
+                
+                session.commit()
+                logger.info(f"API用量记录成功: user={user_id}, config={config_name}, tokens={total_tokens}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"记录API用量失败: {str(e)}")
+            return False
+    
+    def get_api_usage(self, user_id: int, config_name: Optional[str] = None, 
+                     year_month: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取API用量记录"""
+        try:
+            with Session(self.engine) as session:
+                query = select(APIUsageRecord).where(APIUsageRecord.user_id == user_id)
+                
+                if config_name:
+                    query = query.where(APIUsageRecord.config_name == config_name)
+                if year_month:
+                    query = query.where(APIUsageRecord.year_month == year_month)
+                
+                records = session.exec(
+                    query.order_by(APIUsageRecord.year_month.desc())
+                ).all()
+                
+                result = []
+                for record in records:
+                    result.append({
+                        "id": record.id,
+                        "config_name": record.config_name,
+                        "year_month": record.year_month,
+                        "prompt_tokens": record.prompt_tokens,
+                        "completion_tokens": record.completion_tokens,
+                        "total_tokens": record.total_tokens,
+                        "request_count": record.request_count,
+                        "is_estimated": record.is_estimated,
+                        "created_at": record.created_at.isoformat(),
+                        "updated_at": record.updated_at.isoformat()
+                    })
+                return result
+                
+        except Exception as e:
+            logger.error(f"获取API用量失败: {str(e)}")
+            return []
+    
+    def get_monthly_usage_summary(self, user_id: int, year_month: Optional[str] = None) -> Dict[str, Any]:
+        """获取月度用量汇总"""
+        try:
+            # 如果没有指定月份，使用当前月份
+            if not year_month:
+                year_month = datetime.utcnow().strftime("%Y-%m")
+            
+            with Session(self.engine) as session:
+                records = session.exec(
+                    select(APIUsageRecord).where(
+                        APIUsageRecord.user_id == user_id,
+                        APIUsageRecord.year_month == year_month
+                    )
+                ).all()
+                
+                # 按配置汇总
+                summary = {
+                    "year_month": year_month,
+                    "total_tokens": 0,
+                    "total_requests": 0,
+                    "by_config": {}
+                }
+                
+                for record in records:
+                    summary["total_tokens"] += record.total_tokens
+                    summary["total_requests"] += record.request_count
+                    
+                    summary["by_config"][record.config_name] = {
+                        "prompt_tokens": record.prompt_tokens,
+                        "completion_tokens": record.completion_tokens,
+                        "total_tokens": record.total_tokens,
+                        "request_count": record.request_count,
+                        "is_estimated": record.is_estimated
+                    }
+                
+                return summary
+                
+        except Exception as e:
+            logger.error(f"获取月度用量汇总失败: {str(e)}")
+            return {"year_month": year_month, "total_tokens": 0, "total_requests": 0, "by_config": {}}
 
 # 全局用户服务实例
 user_service = UserService() 

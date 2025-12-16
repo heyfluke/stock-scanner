@@ -166,6 +166,27 @@ docker-compose up -d
 
 相关参考：[免费泛域名 SSL 证书申请及自动续期（使用 1Panel 面板）](https://bronya-zaychik.cn/archives/GenSSL.html)
 
+## 多API key的支持
+试验性功能：目前面向开发者，因为.env配置对普通用户来说还比较难。
+可在数据库中添加多个API key，然后在界面上随时切换不同的服务商。
+添加办法：
+
+```
+# 添加配置
+python manage_api_configs.py --add \
+  --config-name "OpenAI-GPT4" \
+  --url "https://api.openai.com/v1/" \
+  --key "sk-xxx" \
+  --model "gpt-4o" \
+  --description "OpenAI GPT-4o"
+
+# 列出配置
+python manage_api_configs.py --list
+
+# 删除配置
+python manage_api_configs.py --delete --config-name "OpenAI-GPT4"
+```
+
 ## Github Actions 部署
 
 | 环境变量 | 说明 |
