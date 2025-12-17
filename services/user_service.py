@@ -928,19 +928,26 @@ class UserService:
             logger.error(f"获取API用量失败: {str(e)}")
             return []
     
-    def get_monthly_usage_summary(self, user_id: int, year_month: Optional[str] = None) -> Dict[str, Any]:
-        """获取月度用量汇总"""
+    def get_monthly_usage_summary(self, user_id: int, year_month: Optional[str] = None, config_name: Optional[str] = None) -> Dict[str, Any]:
+        """获取月度用量汇总（支持按配置筛选）"""
         try:
             # 如果没有指定月份，使用当前月份
             if not year_month:
                 year_month = datetime.utcnow().strftime("%Y-%m")
             
             with Session(self.engine) as session:
+                # 构建查询条件
+                conditions = [
+                    APIUsageRecord.user_id == user_id,
+                    APIUsageRecord.year_month == year_month
+                ]
+                
+                # 如果指定了配置名称，添加筛选条件
+                if config_name:
+                    conditions.append(APIUsageRecord.config_name == config_name)
+                
                 records = session.exec(
-                    select(APIUsageRecord).where(
-                        APIUsageRecord.user_id == user_id,
-                        APIUsageRecord.year_month == year_month
-                    )
+                    select(APIUsageRecord).where(*conditions)
                 ).all()
                 
                 # 按配置汇总

@@ -621,8 +621,8 @@ async def get_api_usage(
     
     user_id = current_user["user_id"]
     
-    # 获取月度汇总
-    summary = user_service.get_monthly_usage_summary(user_id, year_month)
+    # 获取月度汇总（支持按配置筛选）
+    summary = user_service.get_monthly_usage_summary(user_id, year_month, config_name)
     
     # 获取详细记录
     records = user_service.get_api_usage(user_id, config_name, year_month)

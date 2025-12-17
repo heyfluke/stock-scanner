@@ -257,47 +257,115 @@
               </n-card>
               
               <!-- API用量统计 -->
-              <n-card title="本月用量统计" size="small">
+              <n-card size="small">
+                <template #header>
+                  <n-space align="center" justify="space-between">
+                    <span>API用量统计</span>
+                    <n-select
+                      v-model:value="selectedUsageConfig"
+                      :options="usageConfigOptions"
+                      size="small"
+                      style="width: 150px;"
+                      @update:value="loadApiUsage"
+                    />
+                  </n-space>
+                </template>
+                
                 <n-spin :show="loadingUsage">
                   <template v-if="usageSummary && usageSummary.total_tokens > 0">
                     <n-space vertical>
-                      <n-statistic label="总Token消耗" :value="usageSummary.total_tokens">
-                        <template #suffix>tokens</template>
-                      </n-statistic>
+                      <!-- 汇总统计 -->
+                      <n-alert type="info" :show-icon="false" style="overflow: visible;">
+                        <template #header>
+                          <n-space align="center">
+                            <n-text strong>{{ selectedUsageConfig === 'all' ? '所有配置' : selectedUsageConfig }} - 本月汇总</n-text>
+                            <n-tag v-if="selectedUsageConfig === selectedApiConfig" type="success" size="small">当前使用</n-tag>
+                          </n-space>
+                        </template>
+                        <n-grid cols="1 s:2" :x-gap="12" :y-gap="12" responsive="screen">
+                          <n-grid-item>
+                            <n-statistic label="总Token消耗" :value="usageSummary.total_tokens" style="white-space: nowrap;">
+                              <template #suffix>
+                                <span style="white-space: nowrap;">tokens</span>
+                              </template>
+                            </n-statistic>
+                          </n-grid-item>
+                          <n-grid-item>
+                            <n-statistic label="总请求次数" :value="usageSummary.total_requests" style="white-space: nowrap;">
+                              <template #suffix>
+                                <span style="white-space: nowrap;">次</span>
+                              </template>
+                            </n-statistic>
+                          </n-grid-item>
+                        </n-grid>
+                      </n-alert>
                       
-                      <n-statistic label="总请求次数" :value="usageSummary.total_requests">
-                        <template #suffix>次</template>
-                      </n-statistic>
+                      <!-- 仅在查看所有配置时显示详细分组 -->
+                      <template v-if="selectedUsageConfig === 'all' && usageSummary.by_config">
+                        <n-divider />
+                        <n-text strong>按配置明细:</n-text>
+                        
+                        <n-list bordered>
+                          <n-list-item v-for="(usage, configName) in usageSummary.by_config" :key="configName">
+                            <template #prefix>
+                              <n-icon 
+                                :component="CheckmarkCircleIcon" 
+                                :color="configName === selectedApiConfig ? '#18a058' : '#ccc'"
+                              />
+                            </template>
+                            <n-thing>
+                              <template #header>
+                                <n-space align="center">
+                                  <n-text strong>{{ configName }}</n-text>
+                                  <n-tag v-if="configName === selectedApiConfig" type="success" size="tiny">当前使用</n-tag>
+                                  <n-tag v-if="getConfigSource(configName) === 'environment'" size="tiny" type="success">环境变量</n-tag>
+                                  <n-tag v-else-if="getConfigSource(configName) === 'database'" size="tiny" type="info">预配置</n-tag>
+                                  <n-tag v-else-if="getConfigSource(configName) === '个性配置'" size="tiny" type="warning">自定义</n-tag>
+                                </n-space>
+                              </template>
+                              <n-space vertical size="small">
+                                <n-space>
+                                  <n-text depth="3">📥 输入: {{ usage.prompt_tokens?.toLocaleString() || 0 }} tokens</n-text>
+                                  <n-text depth="3">📤 输出: {{ usage.completion_tokens?.toLocaleString() || 0 }} tokens</n-text>
+                                </n-space>
+                                <n-space>
+                                  <n-text depth="3">📊 总计: {{ usage.total_tokens?.toLocaleString() || 0 }} tokens</n-text>
+                                  <n-text depth="3">🔄 请求: {{ usage.request_count }} 次</n-text>
+                                  <n-tag v-if="usage.is_estimated" size="tiny" type="warning">估算值</n-tag>
+                                </n-space>
+                              </n-space>
+                            </n-thing>
+                          </n-list-item>
+                        </n-list>
+                      </template>
                       
-                      <n-divider />
-                      
-                      <n-text strong>按配置统计:</n-text>
-                      
-                      <n-list>
-                        <n-list-item v-for="(usage, configName) in usageSummary.by_config" :key="configName">
-                          <n-thing :title="configName">
-                            <n-space>
-                              <n-text depth="3">
-                                输入: {{ usage.prompt_tokens }} tokens
-                              </n-text>
-                              <n-text depth="3">
-                                输出: {{ usage.completion_tokens }} tokens
-                              </n-text>
-                              <n-text depth="3">
-                                总计: {{ usage.total_tokens }} tokens
-                              </n-text>
-                              <n-text depth="3">
-                                请求: {{ usage.request_count }} 次
-                              </n-text>
-                              <n-tag v-if="usage.is_estimated" size="tiny" type="warning">估算</n-tag>
-                            </n-space>
-                          </n-thing>
-                        </n-list-item>
-                      </n-list>
+                      <!-- 查看特定配置时的详细信息 -->
+                      <template v-else-if="selectedUsageConfig !== 'all'">
+                        <n-descriptions bordered :column="1" size="small">
+                          <n-descriptions-item label="输入Token">
+                            <n-text strong>{{ getConfigDetailValue('prompt_tokens') }}</n-text>
+                          </n-descriptions-item>
+                          <n-descriptions-item label="输出Token">
+                            <n-text strong>{{ getConfigDetailValue('completion_tokens') }}</n-text>
+                          </n-descriptions-item>
+                          <n-descriptions-item label="总Token">
+                            <n-text strong>{{ getConfigDetailValue('total_tokens') }}</n-text>
+                          </n-descriptions-item>
+                          <n-descriptions-item label="请求次数">
+                            <n-text strong>{{ getConfigDetailValue('request_count') }}</n-text>
+                          </n-descriptions-item>
+                        </n-descriptions>
+                      </template>
                     </n-space>
                   </template>
                   
-                  <n-empty v-else description="本月暂无用量数据" />
+                  <n-empty v-else description="本月暂无用量数据">
+                    <template #extra>
+                      <n-text depth="3" style="font-size: 12px;">
+                        {{ selectedUsageConfig === 'all' ? '所有配置' : selectedUsageConfig }} 在本月尚未有使用记录
+                      </n-text>
+                    </template>
+                  </n-empty>
                 </n-spin>
               </n-card>
             </div>
@@ -324,13 +392,14 @@ import {
   NCard, NTabs, NTabPane, NForm, NFormItem, NInput, NButton,
   NDescriptions, NDescriptionsItem, NList, NListItem, NThing,
   NTag, NSpace, NText, NEmpty, NIcon, NSpin, NModal, useMessage,
-  NRadioGroup, NRadio, NDivider, NStatistic
+  NRadioGroup, NRadio, NDivider, NStatistic, NSelect, NAlert, NGrid, NGridItem
 } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { 
   LogOutOutline as LogOutIcon, 
   TrashOutline as TrashIcon,
   CheckmarkCircleOutline,
+  CheckmarkCircleOutline as CheckmarkCircleIcon,
   BarChartOutline,
   ChatbubbleEllipsesOutline
 } from '@vicons/ionicons5';
@@ -385,6 +454,24 @@ const selectedApiConfig = ref<string | null>(null);
 const savingApiConfig = ref(false);
 const usageSummary = ref<any>(null);
 const loadingUsage = ref(false);
+const selectedUsageConfig = ref<string>('all'); // 用量统计选择的配置
+
+// 用量配置选项
+const usageConfigOptions = computed(() => {
+  const options = [
+    { label: '所有配置', value: 'all' }
+  ];
+  
+  // 添加所有可用的API配置
+  apiConfigs.value.forEach(config => {
+    options.push({
+      label: config.config_name,
+      value: config.config_name
+    });
+  });
+  
+  return options;
+});
 
 // Tab状态
 const activeTab = ref(props.defaultTab || 'login');
@@ -640,13 +727,38 @@ const loadApiConfigs = async () => {
 const loadApiUsage = async () => {
   try {
     loadingUsage.value = true;
-    const response = await apiService.getApiUsage();
+    const configName = selectedUsageConfig.value === 'all' ? undefined : selectedUsageConfig.value;
+    const response = await apiService.getApiUsage(configName);
     usageSummary.value = response.summary || null;
+    console.log('📊 加载API用量:', configName || '所有配置', usageSummary.value);
   } catch (error) {
     console.error('加载API用量失败:', error);
   } finally {
     loadingUsage.value = false;
   }
+};
+
+// 获取配置来源
+const getConfigSource = (configName: string): string => {
+  const config = apiConfigs.value.find(c => c.config_name === configName);
+  return config?.source || 'unknown';
+};
+
+// 获取特定配置的详细数据
+const getConfigDetailValue = (field: string): string => {
+  if (!usageSummary.value) return '0';
+  
+  // 如果查看的是特定配置，数据在 by_config[config_name] 中
+  if (selectedUsageConfig.value !== 'all' && usageSummary.value.by_config) {
+    const configData = usageSummary.value.by_config[selectedUsageConfig.value];
+    if (configData && configData[field] !== undefined) {
+      return configData[field].toLocaleString();
+    }
+  }
+  
+  // 否则使用顶层数据
+  const value = usageSummary.value[field];
+  return value !== undefined ? value.toLocaleString() : '0';
 };
 
 // 处理API配置变更
