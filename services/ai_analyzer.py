@@ -124,7 +124,15 @@ class AIAnalyzer:
                         msg = response.text
                     raise RuntimeError(f"API请求失败: {response.status_code} - {msg}")
                 data = response.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                choices = data.get("choices", [])
+                if not choices:
+                    logger.error(f"API响应中没有choices: {data}")
+                    raise RuntimeError(f"API返回了空的响应")
+                content = choices[0].get("message", {}).get("content", "")
+                if not content:
+                    logger.error(f"API响应中没有内容: {data}")
+                    raise RuntimeError(f"API返回了空的分析内容")
+                return content
         else:
             # 流式：返回异步生成器
             return self._stream_completion(api_url, request_data, headers)
@@ -424,10 +432,24 @@ class AIAnalyzer:
                                         # 尝试解析JSON
                                         chunk_data = json.loads(line)
                                         
+                                        # 获取choices数组，确保不为空
+                                        choices = chunk_data.get("choices", [])
+                                        if not choices:
+                                            logger.debug("收到空的choices数组，跳过")
+                                            # 即使choices为空，也检查是否有usage信息
+                                            if 'usage' in chunk_data:
+                                                usage_info = chunk_data['usage']
+                                                logger.info(f"收到usage信息: {usage_info}")
+                                            continue
+                                        
                                         # 检查是否有finish_reason
-                                        finish_reason = chunk_data.get("choices", [{}])[0].get("finish_reason")
+                                        finish_reason = choices[0].get("finish_reason")
                                         if finish_reason == "stop":
                                             logger.debug("收到finish_reason=stop，流结束")
+                                            # 流结束时也检查usage信息
+                                            if 'usage' in chunk_data:
+                                                usage_info = chunk_data['usage']
+                                                logger.info(f"收到usage信息: {usage_info}")
                                             continue
                                         
                                         # 提取usage信息（通常在最后一个chunk中）
@@ -436,7 +458,7 @@ class AIAnalyzer:
                                             logger.info(f"收到usage信息: {usage_info}")
                                         
                                         # 获取delta内容
-                                        delta = chunk_data.get("choices", [{}])[0].get("delta", {})
+                                        delta = choices[0].get("delta", {})
                                         
                                         # 检查delta是否为空对象
                                         if not delta or delta == {}:
@@ -535,7 +557,27 @@ class AIAnalyzer:
                         return
                     
                     response_data = response.json()
-                    analysis_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    
+                    # 安全地提取分析内容
+                    choices = response_data.get("choices", [])
+                    if not choices:
+                        logger.error(f"API响应中没有choices: {response_data}")
+                        yield json.dumps({
+                            "stock_code": stock_code,
+                            "error": "API返回了空的响应",
+                            "status": "error"
+                        })
+                        return
+                    
+                    analysis_text = choices[0].get("message", {}).get("content", "")
+                    if not analysis_text:
+                        logger.error(f"API响应中没有内容: {response_data}")
+                        yield json.dumps({
+                            "stock_code": stock_code,
+                            "error": "API返回了空的分析内容",
+                            "status": "error"
+                        })
+                        return
                     
                     # 提取usage信息
                     usage_info = response_data.get('usage')
@@ -820,7 +862,25 @@ class AIAnalyzer:
                         return
                     
                     response_data = response.json()
-                    content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    
+                    # 安全地提取对话内容
+                    choices = response_data.get("choices", [])
+                    if not choices:
+                        logger.error(f"对话API响应中没有choices: {response_data}")
+                        yield json.dumps({
+                            "error": "API返回了空的响应",
+                            "status": "error"
+                        })
+                        return
+                    
+                    content = choices[0].get("message", {}).get("content", "")
+                    if not content:
+                        logger.error(f"对话API响应中没有内容: {response_data}")
+                        yield json.dumps({
+                            "error": "API返回了空的对话内容",
+                            "status": "error"
+                        })
+                        return
                     
                     logger.info(f"对话响应完成，长度: {len(content)}")
                     yield json.dumps({

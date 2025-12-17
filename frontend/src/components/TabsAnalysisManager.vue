@@ -266,21 +266,35 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
       preset_id: presetId || 'standard'
     } as any;
     
-    // 添加自定义API配置
-    if (apiConfig.value.apiUrl) {
-      requestData.api_url = apiConfig.value.apiUrl;
-    }
+    // 优先使用用户选择的API配置
+    let hasCustomApiConfig = false;
     
-    if (apiConfig.value.apiKey) {
-      requestData.api_key = apiConfig.value.apiKey;
-    }
-    
-    if (apiConfig.value.apiModel) {
-      requestData.api_model = apiConfig.value.apiModel;
-    }
-    
-    if (apiConfig.value.apiTimeout) {
-      requestData.api_timeout = apiConfig.value.apiTimeout;
+    // 检查是否有直接填写的API配置
+    if (apiConfig.value.apiUrl || apiConfig.value.apiKey || apiConfig.value.apiModel) {
+      hasCustomApiConfig = true;
+      if (apiConfig.value.apiUrl) {
+        requestData.api_url = apiConfig.value.apiUrl;
+      }
+      if (apiConfig.value.apiKey) {
+        requestData.api_key = apiConfig.value.apiKey;
+      }
+      if (apiConfig.value.apiModel) {
+        requestData.api_model = apiConfig.value.apiModel;
+      }
+      if (apiConfig.value.apiTimeout) {
+        requestData.api_timeout = apiConfig.value.apiTimeout;
+      }
+    } else {
+      // 如果没有直接填写的配置，尝试使用用户选择的配置
+      try {
+        const settings = await apiService.getUserSettings();
+        if (settings && settings.selected_api_config) {
+          requestData.config_name = settings.selected_api_config;
+          console.log('[Tabs] 使用用户选择的API配置:', settings.selected_api_config);
+        }
+      } catch (error) {
+        console.error('[Tabs] 获取用户API配置失败:', error);
+      }
     }
     
     // console.log('Sending re-analysis request to /api/analyze:', requestData);

@@ -730,6 +730,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             logger.debug(f"使用个性配置: URL={custom_api_url}, 模型={custom_api_model}")
         
         analysis_days = request.analysis_days or 30  # 默认30天
+        logger.info(f"📡 当前使用的API配置: {effective_config_name} | URL={'已配置' if custom_api_url else '未配置'} | Key={'已提供' if custom_api_key else '未提供'} | Model={custom_api_model or '默认'} | 分析天数={analysis_days}")
         logger.debug(f"有效配置名称: {effective_config_name}, API Key={'已提供' if custom_api_key else '未提供'}, Timeout={custom_api_timeout}, 分析天数={analysis_days}")
         
         # 如果提供了preset_id，则使用Orchestrator；否则保持原有StockAnalyzerService

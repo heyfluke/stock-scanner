@@ -229,9 +229,10 @@
                           <n-space vertical :size="4">
                             <n-space align="center">
                               <n-text strong>{{ config.config_name }}</n-text>
-                              <n-tag v-if="config.source === 'environment'" size="small" type="success">环境</n-tag>
-                              <n-tag v-else-if="config.source === 'database'" size="small" type="info">数据库</n-tag>
-                              <n-tag v-else size="small">个性</n-tag>
+                              <n-tag v-if="config.source === 'environment'" size="small" type="success">环境变量</n-tag>
+                              <n-tag v-else-if="config.source === 'database'" size="small" type="info">预配置</n-tag>
+                              <n-tag v-else-if="config.source === 'custom'" size="small" type="warning">自定义</n-tag>
+                              <n-tag v-else size="small">其他</n-tag>
                             </n-space>
                             <n-text v-if="config.description" depth="3" style="font-size: 12px;">
                               {{ config.description }}
@@ -349,6 +350,7 @@ const props = defineProps<{
 // 定义emits
 const emit = defineEmits<{
   'restore-history': [history: AnalysisHistoryItem];
+  'api-config-changed': [configName: string];
 }>();
 
 const message = useMessage();
@@ -609,6 +611,14 @@ const loadApiConfigs = async () => {
   try {
     const response = await apiService.getApiConfigs();
     apiConfigs.value = response.configs || [];
+    
+    // 添加"个性配置"选项
+    apiConfigs.value.push({
+      config_name: '个性配置',
+      source: 'custom',
+      description: '在主界面直接填写API URL、Key等信息'
+    });
+    
     console.log('API配置列表已加载:', apiConfigs.value);
     
     // 加载用户当前选择的配置
@@ -616,9 +626,10 @@ const loadApiConfigs = async () => {
     console.log('用户设置已加载:', settings);
     if (settings && settings.selected_api_config) {
       selectedApiConfig.value = settings.selected_api_config;
-      console.log('已恢复API配置选择:', selectedApiConfig.value);
+      console.log('✅ 已恢复API配置选择:', selectedApiConfig.value);
     } else {
-      console.log('未找到已保存的API配置选择');
+      console.log('ℹ️ 未找到已保存的API配置选择，默认使用个性配置');
+      selectedApiConfig.value = '个性配置';
     }
   } catch (error) {
     console.error('加载API配置失败:', error);
@@ -653,14 +664,17 @@ const saveApiConfigSelection = async () => {
   
   try {
     savingApiConfig.value = true;
-    console.log('正在保存API配置:', selectedApiConfig.value);
+    console.log('✏️ 正在保存API配置:', selectedApiConfig.value);
     const result = await apiService.updateUserSettings({
       selected_api_config: selectedApiConfig.value
     });
-    console.log('保存结果:', result);
+    console.log('✅ 保存结果:', result);
     message.success('API配置保存成功');
+    
+    // 通知父组件刷新API配置状态
+    emit('api-config-changed', selectedApiConfig.value);
   } catch (error: any) {
-    console.error('保存API配置失败:', error);
+    console.error('❌ 保存API配置失败:', error);
     message.error(error.message || '保存失败');
   } finally {
     savingApiConfig.value = false;

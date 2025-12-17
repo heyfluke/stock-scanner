@@ -35,17 +35,33 @@
           <n-collapse-transition :show="showUserPanel">
             <UserPanel 
             @restore-history="handleRestoreHistory"
+            @api-config-changed="handleApiConfigChanged"
           />
           </n-collapse-transition>
         </n-card>
         
-        <!-- API配置面板 -->
+        <!-- API配置面板 (仅当选择"个性配置"时显示) -->
         <ApiConfigPanel
+          v-if="showApiConfigPanel"
           :default-api-url="defaultApiUrl"
           :default-api-model="defaultApiModel"
           :default-api-timeout="defaultApiTimeout"
           @update:api-config="updateApiConfig"
         />
+        
+        <!-- 显示当前使用的API配置 -->
+        <n-alert v-else type="info" style="margin-bottom: 16px;" :show-icon="false">
+          <template #header>
+            <n-space align="center">
+              <n-icon :component="SettingsIcon" />
+              <span>当前API配置</span>
+            </n-space>
+          </template>
+          <n-text>正在使用预配置: <n-text strong>{{ selectedApiConfigName }}</n-text></n-text>
+          <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px;">
+            如需更改，请前往"用户中心 > API配置"
+          </n-text>
+        </n-alert>
         
         <!-- 主要内容 -->
         <n-card class="analysis-container mobile-card mobile-card-spacing mobile-shadow">
@@ -189,13 +205,15 @@ import {
   useMessage,
   NSpace,
   NText,
-  NCollapseTransition
+  NCollapseTransition,
+  NAlert
 } from 'naive-ui';
 import { useClipboard } from '@vueuse/core'
 import { 
   DocumentTextOutline as DocumentTextIcon,
   PersonOutline as PersonIcon,
-  ChevronDownOutline as ChevronDownIcon
+  ChevronDownOutline as ChevronDownIcon,
+  SettingsOutline as SettingsIcon
 } from '@vicons/ionicons5';
 // removed unused imports
 // import { useRoute } from 'vue-router';
@@ -264,6 +282,48 @@ const apiConfig = ref<ApiConfig>({
   apiTimeout: '60',
   saveApiConfig: false
 });
+
+// 用户选择的API配置名称
+const selectedApiConfigName = ref<string>('个性配置');
+
+// 是否显示API配置面板
+const showApiConfigPanel = computed(() => {
+  return selectedApiConfigName.value === '个性配置';
+});
+
+// 加载用户选择的API配置
+const loadUserApiConfig = async () => {
+  try {
+    const settings = await apiService.getUserSettings();
+    if (settings && settings.selected_api_config) {
+      selectedApiConfigName.value = settings.selected_api_config;
+      console.log('🎯 当前使用的API配置:', selectedApiConfigName.value);
+    } else {
+      selectedApiConfigName.value = '个性配置';
+      console.log('🎯 当前使用的API配置: 个性配置（默认）');
+    }
+  } catch (error) {
+    console.error('获取用户API配置失败:', error);
+    selectedApiConfigName.value = '个性配置';
+  }
+};
+
+// 处理API配置变更
+const handleApiConfigChanged = async (configName: string) => {
+  console.log('🔄 API配置已更改为:', configName);
+  selectedApiConfigName.value = configName;
+  
+  // 如果切换到预配置，清空个性配置的输入框
+  if (configName !== '个性配置') {
+    apiConfig.value = {
+      apiUrl: '',
+      apiKey: '',
+      apiModel: '',
+      apiTimeout: '60',
+      saveApiConfig: false
+    };
+  }
+};
 
 // 移动端检测
 const isMobile = computed(() => {
@@ -596,21 +656,35 @@ async function analyzeStocks() {
       preset_id: selectedPresetId.value || 'standard'
     } as any;
     
-    // 添加自定义API配置
-    if (apiConfig.value.apiUrl) {
-      requestData.api_url = apiConfig.value.apiUrl;
-    }
+    // 优先使用用户选择的API配置
+    let hasCustomApiConfig = false;
     
-    if (apiConfig.value.apiKey) {
-      requestData.api_key = apiConfig.value.apiKey;
-    }
-    
-    if (apiConfig.value.apiModel) {
-      requestData.api_model = apiConfig.value.apiModel;
-    }
-    
-    if (apiConfig.value.apiTimeout) {
-      requestData.api_timeout = apiConfig.value.apiTimeout;
+    // 检查是否有直接填写的API配置
+    if (apiConfig.value.apiUrl || apiConfig.value.apiKey || apiConfig.value.apiModel) {
+      hasCustomApiConfig = true;
+      if (apiConfig.value.apiUrl) {
+        requestData.api_url = apiConfig.value.apiUrl;
+      }
+      if (apiConfig.value.apiKey) {
+        requestData.api_key = apiConfig.value.apiKey;
+      }
+      if (apiConfig.value.apiModel) {
+        requestData.api_model = apiConfig.value.apiModel;
+      }
+      if (apiConfig.value.apiTimeout) {
+        requestData.api_timeout = apiConfig.value.apiTimeout;
+      }
+    } else {
+      // 如果没有直接填写的配置，尝试使用用户选择的配置
+      try {
+        const settings = await apiService.getUserSettings();
+        if (settings && settings.selected_api_config) {
+          requestData.config_name = settings.selected_api_config;
+          console.log('使用用户选择的API配置:', settings.selected_api_config);
+        }
+      } catch (error) {
+        console.error('获取用户API配置失败:', error);
+      }
     }
     
     // 获取身份验证令牌
@@ -899,6 +973,11 @@ onMounted(async () => {
     
     // 初始化后恢复本地保存的配置
     restoreLocalApiConfig();
+    
+    // 加载用户选择的API配置
+    if (isLoggedIn.value) {
+      await loadUserApiConfig();
+    }
 
     // 获取多Agent预设
     try {
