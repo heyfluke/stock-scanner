@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import List, AsyncGenerator
+from typing import List, AsyncGenerator, Optional
 from utils.logger import get_logger
 from services.stock_data_provider import StockDataProvider
 from services.technical_indicator import TechnicalIndicator
@@ -39,7 +39,7 @@ class StockAnalyzerService:
         
         logger.info("初始化StockAnalyzerService完成")
     
-    async def analyze_stock(self, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
+    async def analyze_stock(self, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30, portfolio_context: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         分析单只股票
         
@@ -48,12 +48,14 @@ class StockAnalyzerService:
             market_type: 市场类型，默认为'A'股
             stream: 是否使用流式响应
             analysis_days: AI分析使用的天数，默认30天
+            portfolio_context: 用户持仓信息（可选），将添加到分析提示词中
             
         Returns:
             异步生成器，生成分析结果的JSON字符串
         """
         try:
             logger.info(f"开始分析股票: {stock_code}, 市场: {market_type}")
+            logger.info(f"🔍 analyze_stock接收到的portfolio_context: {'存在' if portfolio_context else '不存在'}, 长度={len(portfolio_context) if portfolio_context else 0}")
             
             # 获取股票数据
             logger.debug(f"准备从 data_provider 获取股票代码为 '{stock_code}' 的数据...")
@@ -165,7 +167,7 @@ class StockAnalyzerService:
             yield json.dumps(basic_result, ensure_ascii=False)
             
             # 使用AI进行深入分析
-            async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df_with_indicators, stock_code, market_type, stream, analysis_days):
+            async for analysis_chunk in self.ai_analyzer.get_ai_analysis(df_with_indicators, stock_code, market_type, stream, analysis_days, portfolio_context):
                 yield analysis_chunk
                 
             logger.info(f"完成股票分析: {stock_code}")

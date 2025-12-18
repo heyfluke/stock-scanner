@@ -71,6 +71,28 @@
         title="设置和用户中心" 
         :native-scrollbar="false"
       >
+        <!-- 快捷导航 -->
+        <div class="sidebar-section" v-if="isLoggedIn">
+          <div class="section-header">
+            <n-icon :component="AppsIcon" />
+            <span>快捷导航</span>
+          </div>
+          <n-space vertical>
+            <n-button block @click="navigateTo('/')">
+              <template #icon>
+                <n-icon :component="HomeIcon" />
+              </template>
+              股票分析
+            </n-button>
+            <n-button block @click="navigateTo('/portfolio')">
+              <template #icon>
+                <n-icon :component="WalletIcon" />
+              </template>
+              我的持仓
+            </n-button>
+          </n-space>
+        </div>
+
         <!-- 用户中心部分 -->
         <div class="sidebar-section" v-if="isLoggedIn">
           <div class="section-header">
@@ -115,9 +137,12 @@ import {
   TimeOutline as TimeIcon,
   MenuOutline as MenuIcon,
   PersonOutline as PersonIcon,
-  SettingsOutline as SettingsIcon
+  SettingsOutline as SettingsIcon,
+  AppsOutline as AppsIcon,
+  HomeOutline as HomeIcon,
+  WalletOutline as WalletIcon
 } from '@vicons/ionicons5';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import UserPanel from './UserPanel.vue';
 import ApiConfigPanel from './ApiConfigPanel.vue';
@@ -141,6 +166,7 @@ const emit = defineEmits<{
 }>();
 
 const route = useRoute();
+const router = useRouter();
 
 // 状态
 const showSidebar = ref(false);
@@ -213,6 +239,12 @@ const updateApiConfig = (config: ApiConfig) => {
 const handleRestoreHistory = (history: any) => {
   emit('restore-history', history);
   // 恢复历史后关闭侧边栏
+  showSidebar.value = false;
+};
+
+// 导航到指定路由
+const navigateTo = (path: string) => {
+  router.push(path);
   showSidebar.value = false;
 };
 

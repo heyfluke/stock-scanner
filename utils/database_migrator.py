@@ -400,6 +400,12 @@ class DatabaseMigrator:
                 "name": "add_api_multi_config_support",
                 "description": "添加多API配置支持：api_configurations表、api_usage_records表，为user_settings添加selected_api_config字段",
                 "migrate": self._migrate_to_v11
+            },
+            {
+                "version": 12,
+                "name": "add_portfolio_holdings",
+                "description": "添加用户持仓管理：portfolio_holdings表",
+                "migrate": self._migrate_to_v12
             }
         ]
     
@@ -1071,6 +1077,100 @@ class DatabaseMigrator:
             
         except Exception as e:
             logger.error(f"v11迁移失败: {e}")
+            raise
+    
+    def _migrate_to_v12(self):
+        """迁移到版本12：添加用户持仓管理表"""
+        try:
+            logger.info("开始v12迁移：添加用户持仓管理表")
+            
+            with Session(self.engine) as session:
+                database_url = str(self.engine.url)
+                
+                if database_url.startswith('mysql') or database_url.startswith('mysql+pymysql'):
+                    # MySQL 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS portfolio_holdings (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            user_id INT NOT NULL,
+                            stock_code VARCHAR(20) NOT NULL,
+                            market_type VARCHAR(10) NOT NULL,
+                            display_name VARCHAR(100),
+                            shares DOUBLE DEFAULT 0,
+                            average_cost DOUBLE DEFAULT 0,
+                            purchase_date TIMESTAMP NULL,
+                            notes VARCHAR(500),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                            INDEX idx_user_id (user_id),
+                            INDEX idx_stock_code (stock_code),
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        )
+                    """))
+                    logger.info("创建portfolio_holdings表（MySQL）")
+                    
+                elif database_url.startswith('postgresql'):
+                    # PostgreSQL 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS portfolio_holdings (
+                            id SERIAL PRIMARY KEY,
+                            user_id INTEGER NOT NULL,
+                            stock_code VARCHAR(20) NOT NULL,
+                            market_type VARCHAR(10) NOT NULL,
+                            display_name VARCHAR(100),
+                            shares DOUBLE PRECISION DEFAULT 0,
+                            average_cost DOUBLE PRECISION DEFAULT 0,
+                            purchase_date TIMESTAMP,
+                            notes VARCHAR(500),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_portfolio_user_id 
+                        ON portfolio_holdings (user_id)
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_portfolio_stock_code 
+                        ON portfolio_holdings (stock_code)
+                    """))
+                    logger.info("创建portfolio_holdings表（PostgreSQL）")
+                    
+                else:
+                    # SQLite 语法
+                    session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS portfolio_holdings (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            stock_code TEXT NOT NULL,
+                            market_type TEXT NOT NULL,
+                            display_name TEXT,
+                            shares REAL DEFAULT 0,
+                            average_cost REAL DEFAULT 0,
+                            purchase_date TIMESTAMP,
+                            notes TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        )
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_portfolio_user_id 
+                        ON portfolio_holdings (user_id)
+                    """))
+                    session.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_portfolio_stock_code 
+                        ON portfolio_holdings (stock_code)
+                    """))
+                    logger.info("创建portfolio_holdings表（SQLite）")
+                
+                session.commit()
+            
+            logger.info("v12迁移完成：用户持仓管理表添加成功")
+            
+        except Exception as e:
+            logger.error(f"v12迁移失败: {e}")
             raise
     
     def backup_database(self) -> str:

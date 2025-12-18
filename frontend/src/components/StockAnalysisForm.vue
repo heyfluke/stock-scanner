@@ -37,6 +37,15 @@
         />
       </n-form-item>
       
+      <n-form-item label="分析选项" v-if="isLoggedIn">
+        <n-checkbox v-model:checked="includePortfolio">
+          包含我的持仓信息
+        </n-checkbox>
+        <n-text depth="3" style="font-size: 12px; margin-top: 4px; display: block;">
+          勾选后，AI将结合您的持仓组合进行分析并给出建议
+        </n-text>
+      </n-form-item>
+      
       <div class="action-buttons">
         <n-button
           type="primary"
@@ -85,6 +94,8 @@ import {
   NIcon,
   NUl,
   NLi,
+  NCheckbox,
+  NText,
   useMessage
 } from 'naive-ui';
 import { 
@@ -112,6 +123,7 @@ const emit = defineEmits<{
     analysisDays: number;
     apiConfig: ApiConfig;
     presetId?: string;
+    includePortfolio?: boolean;
   }];
 }>();
 
@@ -123,6 +135,8 @@ const marketType = ref('A');
 const stockCodes = ref('');
 const analysisDays = ref(30);
 const selectedPresetId = ref<string | null>('standard');
+const includePortfolio = ref(false);
+const isLoggedIn = ref(false);
 const presets = ref<AgentPreset[]>([]);
 const presetOptions = computed(() => {
   const items = presets.value.map(p => ({ label: p.name, value: p.id }));
@@ -221,7 +235,8 @@ const handleStartAnalysis = () => {
     marketType: marketType.value,
     analysisDays: analysisDays.value,
     apiConfig: props.apiConfig,
-    presetId: selectedPresetId.value || undefined
+    presetId: selectedPresetId.value || undefined,
+    includePortfolio: includePortfolio.value
   });
   
   // 清空输入
@@ -232,6 +247,18 @@ const handleStartAnalysis = () => {
 
 // 加载后端预设列表
 onMounted(async () => {
+  // 检查登录状态
+  const token = localStorage.getItem('token');
+  if (token) {
+    try {
+      isLoggedIn.value = await apiService.checkAuth();
+    } catch (error) {
+      console.error('检查登录状态失败:', error);
+      isLoggedIn.value = false;
+    }
+  }
+  
+  // 加载预设
   try {
     const serverPresets = await apiService.getAgentPresets();
     if (Array.isArray(serverPresets) && serverPresets.length > 0) {

@@ -125,10 +125,14 @@ class AgentOrchestrator:
         stream: bool,
         analysis_days: int,
         preset_id: Optional[str] = None,
+        portfolio_context: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Execute analysis according to the preset. For MVP, all presets map to
         existing StockAnalyzerService flows to ensure output compatibility.
+        
+        Args:
+            portfolio_context: Optional user portfolio information to include in analysis
         """
         preset = self.get_preset(preset_id)
         preset_key = preset.get("id") if preset else "standard"
@@ -148,13 +152,13 @@ class AgentOrchestrator:
 
         # Single-model multi-role preset
         if preset_key == "single_model_roles":
-            async for chunk in self._run_single_model_roles(stock_codes, market_type, analysis_days):
+            async for chunk in self._run_single_model_roles(stock_codes, market_type, analysis_days, portfolio_context):
                 yield chunk
             return
 
         if len(stock_codes) == 1:
             async for chunk in self._stock_service.analyze_stock(
-                stock_codes[0], market_type, stream=stream, analysis_days=analysis_days
+                stock_codes[0], market_type, stream=stream, analysis_days=analysis_days, portfolio_context=portfolio_context
             ):
                 yield chunk
         else:
@@ -173,9 +177,13 @@ class AgentOrchestrator:
         stock_codes: List[str],
         market_type: str,
         analysis_days: int,
+        portfolio_context: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Single-model multi-role pipeline with synthesizer aggregation.
         Streams per-role outputs and finishes with a synthesized plan.
+        
+        Args:
+            portfolio_context: Optional user portfolio information to include in analysis
         """
         role_templates = (
             ("技术趋势分析师", "你是技术分析师。基于技术摘要与近{days}日数据，输出: 趋势(UP/DOWN/FLAT)、动量质量、关键证据(3-5条)、关键技术位(支撑/压力)。数据: {summary} 近{days}日数据: {recent} 市场:{market} 标的:{code}"),
@@ -267,6 +275,16 @@ class AgentOrchestrator:
                     code=code,
                     prev=collected_text,
                 )
+                
+                # 如果是第一个角色且提供了portfolio_context，添加到prompt
+                if idx == 1 and portfolio_context:
+                    logger.info(f"📋 检测到持仓信息，准备添加到{role_name}的分析提示词 (长度: {len(portfolio_context)} 字符)")
+                    prompt += f"\n\n{'='*50}\n📊 我的持仓情况\n{'='*50}\n{portfolio_context}"
+                    logger.info(f"✅ 已将用户持仓信息添加到{role_name}的分析提示词中")
+                    logger.debug(f"完整prompt长度: {len(prompt)} 字符")
+                elif idx == 1:
+                    logger.debug(f"❌ portfolio_context 为空，未添加持仓信息到{role_name}")
+                
                 # 发送角色开始标记
                 yield json.dumps({
                     "stock_code": code,

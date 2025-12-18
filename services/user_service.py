@@ -98,6 +98,22 @@ class APIConfiguration(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+class PortfolioHolding(SQLModel, table=True):
+    """用户持仓表 - 存储用户的股票持仓信息"""
+    __tablename__ = "portfolio_holdings"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    stock_code: str = Field(max_length=20)  # 股票代码
+    market_type: str = Field(max_length=10)  # 市场类型：A股、港股、美股等
+    display_name: Optional[str] = Field(default=None, max_length=100)  # 股票名称
+    shares: float = Field(default=0)  # 持股数量
+    average_cost: float = Field(default=0)  # 平均成本价
+    purchase_date: Optional[datetime] = Field(default=None)  # 首次购买日期
+    notes: Optional[str] = Field(default=None, max_length=500)  # 备注
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
 class APIUsageRecord(SQLModel, table=True):
     """API用量记录表 - 按月统计token使用量"""
     __tablename__ = "api_usage_records"
@@ -975,6 +991,221 @@ class UserService:
         except Exception as e:
             logger.error(f"获取月度用量汇总失败: {str(e)}")
             return {"year_month": year_month, "total_tokens": 0, "total_requests": 0, "by_config": {}}
+    
+    # ==================== Portfolio 持仓管理 ====================
+    
+    def get_portfolio(self, user_id: int) -> List[Dict[str, Any]]:
+        """获取用户的所有持仓"""
+        try:
+            with Session(self.engine) as session:
+                holdings = session.exec(
+                    select(PortfolioHolding).where(
+                        PortfolioHolding.user_id == user_id
+                    ).order_by(PortfolioHolding.created_at.desc())
+                ).all()
+                
+                return [
+                    {
+                        "id": h.id,
+                        "stock_code": h.stock_code,
+                        "market_type": h.market_type,
+                        "display_name": h.display_name,
+                        "shares": h.shares,
+                        "average_cost": h.average_cost,
+                        "purchase_date": h.purchase_date.isoformat() if h.purchase_date else None,
+                        "notes": h.notes,
+                        "created_at": h.created_at.isoformat(),
+                        "updated_at": h.updated_at.isoformat()
+                    }
+                    for h in holdings
+                ]
+        except Exception as e:
+            logger.error(f"获取用户持仓失败: {str(e)}")
+            return []
+    
+    def add_portfolio_holding(
+        self, 
+        user_id: int, 
+        stock_code: str, 
+        market_type: str,
+        shares: float,
+        average_cost: float,
+        display_name: Optional[str] = None,
+        purchase_date: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """添加持仓记录"""
+        try:
+            with Session(self.engine) as session:
+                # 检查是否已存在相同股票的持仓
+                existing = session.exec(
+                    select(PortfolioHolding).where(
+                        PortfolioHolding.user_id == user_id,
+                        PortfolioHolding.stock_code == stock_code,
+                        PortfolioHolding.market_type == market_type
+                    )
+                ).first()
+                
+                if existing:
+                    # 如果已存在，更新持仓数量和成本
+                    total_cost = existing.average_cost * existing.shares + average_cost * shares
+                    total_shares = existing.shares + shares
+                    existing.shares = total_shares
+                    existing.average_cost = total_cost / total_shares if total_shares > 0 else 0
+                    existing.updated_at = datetime.utcnow()
+                    if display_name:
+                        existing.display_name = display_name
+                    if notes:
+                        existing.notes = notes
+                    session.add(existing)
+                    session.commit()
+                    session.refresh(existing)
+                    holding = existing
+                else:
+                    # 创建新持仓
+                    holding = PortfolioHolding(
+                        user_id=user_id,
+                        stock_code=stock_code,
+                        market_type=market_type,
+                        display_name=display_name,
+                        shares=shares,
+                        average_cost=average_cost,
+                        purchase_date=datetime.fromisoformat(purchase_date) if purchase_date else None,
+                        notes=notes
+                    )
+                    session.add(holding)
+                    session.commit()
+                    session.refresh(holding)
+                
+                return {
+                    "id": holding.id,
+                    "stock_code": holding.stock_code,
+                    "market_type": holding.market_type,
+                    "display_name": holding.display_name,
+                    "shares": holding.shares,
+                    "average_cost": holding.average_cost,
+                    "purchase_date": holding.purchase_date.isoformat() if holding.purchase_date else None,
+                    "notes": holding.notes,
+                    "created_at": holding.created_at.isoformat(),
+                    "updated_at": holding.updated_at.isoformat()
+                }
+        except Exception as e:
+            logger.error(f"添加持仓记录失败: {str(e)}")
+            return None
+    
+    def update_portfolio_holding(
+        self,
+        user_id: int,
+        holding_id: int,
+        shares: Optional[float] = None,
+        average_cost: Optional[float] = None,
+        display_name: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """更新持仓记录"""
+        try:
+            with Session(self.engine) as session:
+                holding = session.exec(
+                    select(PortfolioHolding).where(
+                        PortfolioHolding.id == holding_id,
+                        PortfolioHolding.user_id == user_id
+                    )
+                ).first()
+                
+                if not holding:
+                    return None
+                
+                if shares is not None:
+                    holding.shares = shares
+                if average_cost is not None:
+                    holding.average_cost = average_cost
+                if display_name is not None:
+                    holding.display_name = display_name
+                if notes is not None:
+                    holding.notes = notes
+                
+                holding.updated_at = datetime.utcnow()
+                session.add(holding)
+                session.commit()
+                session.refresh(holding)
+                
+                return {
+                    "id": holding.id,
+                    "stock_code": holding.stock_code,
+                    "market_type": holding.market_type,
+                    "display_name": holding.display_name,
+                    "shares": holding.shares,
+                    "average_cost": holding.average_cost,
+                    "purchase_date": holding.purchase_date.isoformat() if holding.purchase_date else None,
+                    "notes": holding.notes,
+                    "created_at": holding.created_at.isoformat(),
+                    "updated_at": holding.updated_at.isoformat()
+                }
+        except Exception as e:
+            logger.error(f"更新持仓记录失败: {str(e)}")
+            return None
+    
+    def delete_portfolio_holding(self, user_id: int, holding_id: int) -> bool:
+        """删除持仓记录"""
+        try:
+            with Session(self.engine) as session:
+                holding = session.exec(
+                    select(PortfolioHolding).where(
+                        PortfolioHolding.id == holding_id,
+                        PortfolioHolding.user_id == user_id
+                    )
+                ).first()
+                
+                if not holding:
+                    return False
+                
+                session.delete(holding)
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"删除持仓记录失败: {str(e)}")
+            return False
+    
+    def format_portfolio_for_prompt(self, user_id: int) -> Optional[str]:
+        """将用户的持仓格式化为AI提示词"""
+        try:
+            logger.info(f"📊 开始格式化用户 {user_id} 的持仓信息...")
+            holdings = self.get_portfolio(user_id)
+            logger.info(f"📋 查询到 {len(holdings)} 条持仓记录")
+            if not holdings:
+                logger.warning(f"⚠️ 用户 {user_id} 没有持仓记录")
+                return None
+            
+            prompt_lines = ["用户当前持仓组合："]
+            total_value = 0
+            
+            for h in holdings:
+                stock_info = f"{h['stock_code']}"
+                if h['display_name']:
+                    stock_info += f"({h['display_name']})"
+                
+                position_value = h['shares'] * h['average_cost']
+                total_value += position_value
+                
+                prompt_lines.append(
+                    f"- {stock_info}：持仓{h['shares']}股，"
+                    f"成本价{h['average_cost']:.2f}，"
+                    f"持仓市值约{position_value:.2f}"
+                )
+                
+                if h['notes']:
+                    prompt_lines.append(f"  备注：{h['notes']}")
+            
+            prompt_lines.append(f"\n总持仓市值约：{total_value:.2f}")
+            prompt_lines.append("\n请结合用户的持仓组合，分析当前股票与用户投资组合的协同性，并给出持仓调整建议。")
+            
+            result = "\n".join(prompt_lines)
+            logger.info(f"✅ 持仓信息格式化完成，总计 {len(holdings)} 条记录，总市值 {total_value:.2f}")
+            logger.debug(f"持仓提示词内容: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"格式化持仓提示词失败: {str(e)}")
+            return None
 
 # 全局用户服务实例
 user_service = UserService() 

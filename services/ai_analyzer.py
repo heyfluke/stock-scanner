@@ -3,7 +3,7 @@ import os
 import json
 import httpx
 import re
-from typing import AsyncGenerator, List, Dict, Any
+from typing import AsyncGenerator, List, Dict, Any, Optional
 from dotenv import load_dotenv
 from utils.logger import get_logger
 from utils.api_utils import APIUtils
@@ -185,7 +185,7 @@ class AIAnalyzer:
                 if usage_info:
                     yield ('', usage_info)
     
-    async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30) -> AsyncGenerator[str, None]:
+    async def get_ai_analysis(self, df: pd.DataFrame, stock_code: str, market_type: str = 'A', stream: bool = False, analysis_days: int = 30, portfolio_context: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         对股票数据进行AI分析
         
@@ -195,6 +195,7 @@ class AIAnalyzer:
             market_type: 市场类型，默认为'A'股
             stream: 是否使用流式响应
             analysis_days: AI分析使用的天数，默认30天
+            portfolio_context: 用户持仓信息（可选），将添加到分析提示词中
             
         Returns:
             异步生成器，生成分析结果字符串
@@ -330,6 +331,12 @@ class AIAnalyzer:
                 请基于技术指标和A股市场特点进行分析，给出具体数据支持。
                 """
             
+            if portfolio_context:
+                logger.info(f"Add portfolio (len: {len(portfolio_context)})")
+                prompt += f"\n\n{'='*50}\n📊 我的持仓情况\n{'='*50}\n{portfolio_context}"
+            else:
+                logger.debug(f"portfolio_context not provided")
+            
             # 格式化API URL
             api_url = APIUtils.format_api_url(self.API_URL)
             
@@ -439,7 +446,8 @@ class AIAnalyzer:
                                             # 即使choices为空，也检查是否有usage信息
                                             if 'usage' in chunk_data:
                                                 usage_info = chunk_data['usage']
-                                                logger.info(f"收到usage信息: {usage_info}")
+                                                if usage_info:
+                                                    logger.debug(f"收到usage信息: {usage_info}")
                                             continue
                                         
                                         # 检查是否有finish_reason
@@ -449,13 +457,15 @@ class AIAnalyzer:
                                             # 流结束时也检查usage信息
                                             if 'usage' in chunk_data:
                                                 usage_info = chunk_data['usage']
-                                                logger.info(f"收到usage信息: {usage_info}")
+                                                if usage_info:
+                                                    logger.debug(f"收到usage信息: {usage_info}")
                                             continue
                                         
                                         # 提取usage信息（通常在最后一个chunk中）
                                         if 'usage' in chunk_data:
                                             usage_info = chunk_data['usage']
-                                            logger.info(f"收到usage信息: {usage_info}")
+                                            if usage_info:
+                                                logger.debug(f"收到usage信息: {usage_info}")
                                         
                                         # 获取delta内容
                                         delta = choices[0].get("delta", {})

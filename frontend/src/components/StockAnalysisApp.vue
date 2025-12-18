@@ -322,6 +322,16 @@ const handleApiConfigChanged = async (configName: string) => {
       apiTimeout: '60',
       saveApiConfig: false
     };
+  } else {
+    // 切换到"个性配置"时，也清空之前的值，让用户重新填写
+    // 这样可以避免发送从其他配置恢复的值
+    apiConfig.value = {
+      apiUrl: '',
+      apiKey: '',
+      apiModel: '',
+      apiTimeout: '60',
+      saveApiConfig: false
+    };
   }
 };
 

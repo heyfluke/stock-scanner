@@ -87,6 +87,8 @@ interface AnalysisTab {
     stockCodes: string[];
     marketType: string;
     analysisDays: number;
+    includePortfolio?: boolean;
+    presetId?: string;
   };
   createdAt: Date;
   // 分析状态管理
@@ -163,7 +165,9 @@ const createNewAnalysisTab = async (config: any) => {
     config: {
       stockCodes: config.stockCodes,
       marketType: config.marketType,
-      analysisDays: config.analysisDays
+      analysisDays: config.analysisDays,
+      includePortfolio: config.includePortfolio || false,
+      presetId: config.presetId || 'standard'
     },
     createdAt: new Date(),
     hasStartedAnalysis: false,
@@ -180,9 +184,9 @@ const createNewAnalysisTab = async (config: any) => {
   // 保存标签页状态
   saveTabs();
   
-  // 立即开始分析（将 preset_id 传入请求体）
-  console.log('[Tabs] starting analysis for tab:', newTab.id, 'presetId:', config.presetId);
-  startTabAnalysis(newTab, config.presetId);
+  // 立即开始分析（将 preset_id 和 include_portfolio 传入）
+  console.log('[Tabs] starting analysis for tab:', newTab.id, 'presetId:', config.presetId, 'includePortfolio:', config.includePortfolio);
+  startTabAnalysis(newTab, config.presetId, config.includePortfolio);
 };
 
 // 显示替换最旧标签页的确认对话框
@@ -249,8 +253,12 @@ const updateTabTitle = (tabId: string, newTitle: string) => {
 };
 
 // 启动标签页分析
-const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
-  console.log('[Tabs] startTabAnalysis tab:', tab.id, 'presetId:', presetId);
+const startTabAnalysis = async (tab: AnalysisTab, presetId?: string, includePortfolio?: boolean) => {
+  // 如果参数未提供，从 tab.config 中读取
+  const effectivePresetId = presetId || tab.config.presetId || 'standard';
+  const effectiveIncludePortfolio = includePortfolio !== undefined ? includePortfolio : (tab.config.includePortfolio || false);
+  
+  console.log('[Tabs] startTabAnalysis tab:', tab.id, 'presetId:', effectivePresetId, 'includePortfolio:', effectiveIncludePortfolio);
   // 更新分析状态
   tab.hasStartedAnalysis = true;
   tab.isAnalyzing = true;
@@ -263,41 +271,58 @@ const startTabAnalysis = async (tab: AnalysisTab, presetId?: string) => {
       stock_codes: Array.isArray(tab.config.stockCodes) ? tab.config.stockCodes : [tab.config.stockCodes],
       market_type: tab.config.marketType,
       analysis_days: tab.config.analysisDays,
-      preset_id: presetId || 'standard'
+      preset_id: effectivePresetId,
+      include_portfolio: effectiveIncludePortfolio
     } as any;
     
     // 优先使用用户选择的API配置
-    let hasCustomApiConfig = false;
-    
-    // 检查是否有直接填写的API配置
-    if (apiConfig.value.apiUrl || apiConfig.value.apiKey || apiConfig.value.apiModel) {
-      hasCustomApiConfig = true;
-      if (apiConfig.value.apiUrl) {
-        requestData.api_url = apiConfig.value.apiUrl;
-      }
-      if (apiConfig.value.apiKey) {
-        requestData.api_key = apiConfig.value.apiKey;
-      }
-      if (apiConfig.value.apiModel) {
-        requestData.api_model = apiConfig.value.apiModel;
-      }
-      if (apiConfig.value.apiTimeout) {
-        requestData.api_timeout = apiConfig.value.apiTimeout;
-      }
-    } else {
-      // 如果没有直接填写的配置，尝试使用用户选择的配置
-      try {
-        const settings = await apiService.getUserSettings();
-        if (settings && settings.selected_api_config) {
-          requestData.config_name = settings.selected_api_config;
-          console.log('[Tabs] 使用用户选择的API配置:', settings.selected_api_config);
+    try {
+      const settings = await apiService.getUserSettings();
+      console.log('[Tabs] 获取到的用户设置:', settings);
+      
+      if (settings && settings.selected_api_config) {
+        const selectedConfig = settings.selected_api_config;
+        console.log('[Tabs] 用户选择的API配置:', selectedConfig);
+        
+        // 如果用户选择的是"个性配置"（"其他"），才发送直接填写的API信息
+        if (selectedConfig === '个性配置') {
+          // 使用直接填写的API配置
+          // 只发送用户实际填写的字段（非空字段）
+          if (apiConfig.value.apiUrl && apiConfig.value.apiUrl.trim()) {
+            requestData.api_url = apiConfig.value.apiUrl.trim();
+          }
+          if (apiConfig.value.apiKey && apiConfig.value.apiKey.trim()) {
+            requestData.api_key = apiConfig.value.apiKey.trim();
+          }
+          // api_model 是可选的，只有在用户明确填写时才发送
+          if (apiConfig.value.apiModel && apiConfig.value.apiModel.trim()) {
+            requestData.api_model = apiConfig.value.apiModel.trim();
+          }
+          if (apiConfig.value.apiTimeout && apiConfig.value.apiTimeout.trim()) {
+            requestData.api_timeout = apiConfig.value.apiTimeout.trim();
+          }
+          console.log('[Tabs] 使用个性配置（直接填写的API信息）:', {
+            hasUrl: !!requestData.api_url,
+            hasKey: !!requestData.api_key,
+            hasModel: !!requestData.api_model,
+            hasTimeout: !!requestData.api_timeout
+          });
+        } else {
+          // 使用用户选择的配置名称（数据库配置或环境配置）
+          requestData.config_name = selectedConfig;
+          console.log('[Tabs] 使用用户选择的配置名称:', selectedConfig);
         }
-      } catch (error) {
-        console.error('[Tabs] 获取用户API配置失败:', error);
+      } else {
+        // 用户未选择配置，默认使用环境配置
+        console.log('[Tabs] 用户未选择API配置，将使用环境配置');
+        // 不发送任何API相关字段，后端会使用环境变量
       }
+    } catch (error) {
+      console.error('[Tabs] 获取用户API配置失败:', error);
+      // 出错时，不发送任何API相关字段，让后端使用默认配置
     }
     
-    // console.log('Sending re-analysis request to /api/analyze:', requestData);
+    console.log('[Tabs] 发送完整请求数据:', JSON.stringify(requestData, null, 2));
     
     const token = localStorage.getItem('token');
     const headers: Record<string, string> = {
@@ -563,8 +588,11 @@ const handleTabStreamUpdate = (tab: AnalysisTab, data: any) => {
 const handleRestartAnalysis = (tabId: string) => {
   const tab = analysisTabs.value.find(t => t.id === tabId);
   if (tab) {
-    // console.log('Restarting analysis for tab:', tabId, 'with config:', tab.config);
-    startTabAnalysis(tab);
+    // 从 tab.config 中读取 presetId 和 includePortfolio
+    const presetId = tab.config.presetId || 'standard';
+    const includePortfolio = tab.config.includePortfolio || false;
+    console.log('[Tabs] Restarting analysis for tab:', tabId, 'presetId:', presetId, 'includePortfolio:', includePortfolio);
+    startTabAnalysis(tab, presetId, includePortfolio);
   }/* else {
     console.error('Tab not found for re-analysis:', tabId);
   }*/

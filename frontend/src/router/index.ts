@@ -3,12 +3,19 @@ import type { RouteRecordRaw } from 'vue-router';
 import { apiService } from '@/services/api';
 import TabsAnalysisManager from '@/components/TabsAnalysisManager.vue';
 import LoginPage from '@/components/LoginPage.vue';
+import PortfolioPanel from '@/components/PortfolioPanel.vue';
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     name: 'Home',
     component: TabsAnalysisManager,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/portfolio',
+    name: 'Portfolio',
+    component: PortfolioPanel,
     meta: { requiresAuth: true }
   },
   {

@@ -180,6 +180,7 @@ export interface AnalyzeRequest {
   analysis_days?: number; // AI分析使用的天数，默认30天
   preset_id?: string; // 多Agent分析方案（可选）
   config_name?: string; // API配置名称（新增）
+  include_portfolio?: boolean; // 是否在分析中包含用户持仓信息
 }
 
 export interface TestApiRequest {

@@ -79,6 +79,7 @@ class AnalyzeRequest(BaseModel):
     analysis_days: Optional[int] = 30  # AI分析使用的天数，默认30天
     preset_id: Optional[str] = None     # 多Agent预设方案ID（可选）
     config_name: Optional[str] = None   # API配置名称（新增）
+    include_portfolio: bool = False  # 是否在分析中包含用户持仓信息
 
 class TestAPIRequest(BaseModel):
     api_url: str
@@ -93,6 +94,21 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class AddPortfolioRequest(BaseModel):
+    stock_code: str
+    market_type: str
+    shares: float
+    average_cost: float
+    display_name: Optional[str] = None
+    purchase_date: Optional[str] = None
+    notes: Optional[str] = None
+
+class UpdatePortfolioRequest(BaseModel):
+    shares: Optional[float] = None
+    average_cost: Optional[float] = None
+    display_name: Optional[str] = None
+    notes: Optional[str] = None
 
 # 自定义依赖项，在允许匿名访问时不要求token
 class OptionalOAuth2PasswordBearer(OAuth2PasswordBearer):
@@ -650,6 +666,86 @@ async def add_api_config(
     else:
         raise HTTPException(status_code=400, detail="API配置添加失败，可能配置名称已存在")
 
+# ==================== Portfolio 持仓管理 API ====================
+
+@app.get("/api/user/portfolio")
+async def get_portfolio(current_user: dict = Depends(get_current_user)):
+    """获取用户的持仓列表"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user_id = current_user["user_id"]
+    holdings = user_service.get_portfolio(user_id)
+    return {"holdings": holdings}
+
+@app.post("/api/user/portfolio")
+async def add_portfolio_holding(
+    holding: AddPortfolioRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """添加持仓记录"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user_id = current_user["user_id"]
+    result = user_service.add_portfolio_holding(
+        user_id=user_id,
+        stock_code=holding.stock_code,
+        market_type=holding.market_type,
+        shares=holding.shares,
+        average_cost=holding.average_cost,
+        display_name=holding.display_name,
+        purchase_date=holding.purchase_date,
+        notes=holding.notes
+    )
+    
+    if result:
+        return {"success": True, "holding": result}
+    else:
+        raise HTTPException(status_code=400, detail="添加持仓失败")
+
+@app.put("/api/user/portfolio/{holding_id}")
+async def update_portfolio_holding(
+    holding_id: int,
+    holding: UpdatePortfolioRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """更新持仓记录"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user_id = current_user["user_id"]
+    result = user_service.update_portfolio_holding(
+        user_id=user_id,
+        holding_id=holding_id,
+        shares=holding.shares,
+        average_cost=holding.average_cost,
+        display_name=holding.display_name,
+        notes=holding.notes
+    )
+    
+    if result:
+        return {"success": True, "holding": result}
+    else:
+        raise HTTPException(status_code=404, detail="持仓记录不存在或无权限修改")
+
+@app.delete("/api/user/portfolio/{holding_id}")
+async def delete_portfolio_holding(
+    holding_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """删除持仓记录"""
+    if not current_user["is_authenticated"] or not current_user["user_id"]:
+        raise HTTPException(status_code=401, detail="请登录后再试")
+    
+    user_id = current_user["user_id"]
+    success = user_service.delete_portfolio_holding(user_id, holding_id)
+    
+    if success:
+        return {"success": True}
+    else:
+        raise HTTPException(status_code=404, detail="持仓记录不存在或无权限删除")
+
 # 获取系统配置
 @app.get("/api/config")
 async def get_config():
@@ -678,6 +774,8 @@ async def list_agent_presets():
 async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_current_user)):
     try:
         logger.info("开始处理分析请求")
+        # 打印完整的请求数据（用于调试）
+        logger.info(f"完整请求数据: {request.model_dump_json()}")
         stock_codes = request.stock_codes
         market_type = request.market_type
         
@@ -688,6 +786,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
             logger.info(f"后端去重: 从{original_count}个代码中移除了{original_count - len(stock_codes)}个重复项")
         
         logger.debug(f"接收到分析请求: stock_codes={stock_codes}, market_type={market_type}")
+        logger.info(f"🔍 接收到的参数: include_portfolio={request.include_portfolio} (类型: {type(request.include_portfolio)}), preset_id={request.preset_id}")
         
         # 获取API配置
         custom_api_url = None
@@ -765,8 +864,23 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                 analysis_days
             )
         
+        # 获取Portfolio信息（如果用户选择包含）
+        portfolio_context = None
+        logger.info(f"🔍 Portfolio检查: include_portfolio={request.include_portfolio}, authenticated={current_user['is_authenticated']}, user_id={current_user.get('user_id')}")
+        if request.include_portfolio and current_user["is_authenticated"] and current_user["user_id"]:
+            logger.info(f"📋 开始获取用户 {current_user['user_id']} 的持仓信息...")
+            portfolio_context = user_service.format_portfolio_for_prompt(current_user["user_id"])
+            if portfolio_context:
+                logger.info(f"✅ 成功获取持仓信息，长度: {len(portfolio_context)} 字符")
+                logger.info(f"📝 持仓内容预览: {portfolio_context[:200]}...")
+            else:
+                logger.warning(f"⚠️ 用户 {current_user['user_id']} 没有持仓记录或持仓为空")
+        
         # 定义流式生成器
         async def generate_stream():
+            # 检查portfolio_context是否可访问
+            logger.info(f"🔍 generate_stream内部检查: portfolio_context={'存在' if portfolio_context else '不存在'}, 长度={len(portfolio_context) if portfolio_context else 0}")
+            
             # 用于收集分析数据的变量
             collected_analysis_result = {}
             collected_ai_output = ""
@@ -793,7 +907,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                 
                 # 使用异步生成器
                 if use_orchestrator:
-                    async for chunk in orchestrator.run([stock_code], market_type, stream=True, analysis_days=analysis_days, preset_id=request.preset_id):
+                    async for chunk in orchestrator.run([stock_code], market_type, stream=True, analysis_days=analysis_days, preset_id=request.preset_id, portfolio_context=portfolio_context):
                         chunk_count += 1
                         # 收集chunk数据
                         try:
@@ -824,7 +938,8 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                             pass
                         yield chunk + '\n'
                 else:
-                    async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days):
+                    logger.info(f"🔍 准备调用analyze_stock，portfolio_context={'存在' if portfolio_context else '不存在'}, 长度={len(portfolio_context) if portfolio_context else 0}")
+                    async for chunk in custom_analyzer.analyze_stock(stock_code, market_type, stream=True, analysis_days=analysis_days, portfolio_context=portfolio_context):
                         chunk_count += 1
                         
                         # 解析chunk数据用于收集
@@ -879,6 +994,7 @@ async def analyze(request: AnalyzeRequest, current_user: dict = Depends(get_curr
                         stream=True,
                         analysis_days=analysis_days,
                         preset_id=request.preset_id,
+                        portfolio_context=portfolio_context
                     ):
                         chunk_count += 1
                         try:
