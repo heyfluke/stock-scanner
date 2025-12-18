@@ -336,11 +336,18 @@ class AgentOrchestrator:
                     
                     logger.info(f"角色 {role_name} 分析完成，输出长度: {len(role_text)} 字符，token使用: {role_usage}")
                 except Exception as e:
-                    logger.exception(f"Role {role_name} generation failed for stock {code}")
+                    # 记录错误类型和消息，避免打印整个 uvicorn reload 调用链
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    logger.error(f"❌ Role {role_name} generation failed for stock {code}: {error_type}: {error_message}")
+                    logger.debug(f"完整错误堆栈:", exc_info=True)  # 只在 DEBUG 级别打印完整堆栈
+                    
                     # 角色分析失败时，发送错误消息并终止整个分析
-                    error_msg = f"角色 {role_name} 分析失败: {str(e)}"
-                    if "ReadTimeout" in str(type(e).__name__) or "timeout" in str(e).lower():
+                    error_msg = f"角色 {role_name} 分析失败: {error_message}"
+                    if "ReadTimeout" in error_type or "timeout" in error_message.lower():
                         error_msg = f"角色 {role_name} 分析超时（可能是AI服务响应慢或超时设置过短）"
+                    elif "Connection" in error_type or "connection" in error_message.lower():
+                        error_msg = f"角色 {role_name} 连接失败（请检查网络或API配置）"
                     
                     yield json.dumps({
                         "stock_code": code,
@@ -413,11 +420,18 @@ class AgentOrchestrator:
                 
                 logger.info(f"综合决策官分析完成，输出长度: {len(final_text)} 字符，token使用: {final_usage}")
             except Exception as e:
-                logger.exception(f"综合决策官执行失败: {e}")
+                # 记录错误类型和消息，避免打印整个 uvicorn reload 调用链
+                error_type = type(e).__name__
+                error_message = str(e)
+                logger.error(f"❌ 综合决策官执行失败: {error_type}: {error_message}")
+                logger.debug(f"完整错误堆栈:", exc_info=True)  # 只在 DEBUG 级别打印完整堆栈
+                
                 # 综合决策官失败时，发送错误消息并终止
-                error_msg = f"综合决策官分析失败: {str(e)}"
-                if "ReadTimeout" in str(type(e).__name__) or "timeout" in str(e).lower():
+                error_msg = f"综合决策官分析失败: {error_message}"
+                if "ReadTimeout" in error_type or "timeout" in error_message.lower():
                     error_msg = f"综合决策官分析超时（可能是AI服务响应慢或超时设置过短）"
+                elif "Connection" in error_type or "connection" in error_message.lower():
+                    error_msg = f"综合决策官连接失败（请检查网络或API配置）"
                 
                 yield json.dumps({
                     "stock_code": code,
