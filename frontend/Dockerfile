@@ -7,20 +7,17 @@ WORKDIR /app
 # 设置官方npm registry
 RUN npm config set registry https://registry.npmjs.org/
 
-# 复制package.json
-COPY package.json ./
+# 安装构建依赖（用于编译原生模块）
+RUN apk add --no-cache python3 make g++
 
-# 清理缓存并安装依赖（不使用package-lock.json）
-RUN npm cache clean --force && \
-    npm install --no-audit --no-fund
+# 复制package.json和package-lock.json（使用lock文件确保依赖版本一致）
+COPY package.json package-lock.json* ./
+
+# 安装依赖（使用package-lock.json确保版本一致）
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # 复制源代码
 COPY . .
-
-# 彻底解决esbuild版本问题
-RUN rm -rf node_modules && \
-    npm cache clean --force && \
-    npm install --no-audit --no-fund
 
 # 构建应用
 RUN npm run build
