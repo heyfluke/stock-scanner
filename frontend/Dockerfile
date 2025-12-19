@@ -14,7 +14,18 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 
 # 安装依赖（使用package-lock.json确保版本一致）
+# 设置环境变量强制安装可选依赖（修复 rollup 原生模块问题）
+ENV npm_config_optional=true
 RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# 显式安装 rollup 的原生模块（修复 npm 可选依赖的 bug）
+# 根据构建平台自动选择正确的原生模块
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        npm install --no-save --no-audit --no-fund @rollup/rollup-linux-x64-musl || true; \
+    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        npm install --no-save --no-audit --no-fund @rollup/rollup-linux-arm64-musl || true; \
+    fi
 
 # 复制源代码
 COPY . .
